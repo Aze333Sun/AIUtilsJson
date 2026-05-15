@@ -12,6 +12,19 @@ export interface ChatConverterOptions {
   includeTimestamp?: boolean;
 }
 
+interface NormalizedMessage {
+  role: string;
+  content: string;
+  name?: string;
+  timestamp?: string;
+  tool_calls?: Array<{
+    id?: string;
+    type?: string;
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+}
+
 export class JsonToMarkdownConverter {
   private indent: number;
   private sort: boolean;
@@ -91,32 +104,153 @@ export class JsonToMarkdownConverter {
       }
     }
 
-    if (!data.messages || !Array.isArray(data.messages)) {
-      throw new Error('无效的聊天格式: 缺少或无效的 messages 数组');
-    }
-
-    return this.convertChatToMarkdown(data.messages, options);
+    const messages = this.detectAndNormalizeChat(data);
+    return this.renderChatToMarkdown(messages, options);
   }
 
-  private convertChatToMarkdown(messages: any[], options: ChatConverterOptions): string {
-    let result = '';
-    messages.forEach((msg, index) => {
-      const role = msg.role || 'unknown';
-      const content = msg.content || '';
-      const roleLabel = role === 'user' ? 'User' :
-                        role === 'assistant' ? 'Assistant' :
-                        role === 'system' ? 'System' :
-                        role.charAt(0).toUpperCase() + role.slice(1);
+  private detectAndNormalizeChat(data: any): NormalizedMessage[] {
+    if (Array.isArray(data)) {
+      return data.map(m => this.normalizeMessage(m));
+    }
 
-      const timestamp = options.includeTimestamp !== false && msg.timestamp ? ` (${msg.timestamp})` : '';
+    if (data.messages && Array.isArray(data.messages)) {
+      return data.messages.map((m: any) => this.normalizeMessage(m));
+    }
 
-      result += `## ${index + 1}. ${roleLabel}${timestamp}\n\n`;
+    if (data.contents && Array.isArray(data.contents)) {
+      return data.contents.map((m: any) => this.normalizeGeminiContent(m));
+    }
 
-      const processedContent = this.processContent(content);
-      result += `${processedContent}\n\n---\n\n`;
+    if (data.conversations && Array.isArray(data.conversations)) {
+      const result: NormalizedMessage[] = [];
+      data.conversations.forEach((conv: any, i: number) => {
+        const title = conv.title || conv.name || `对话 ${i + 1}`;
+        if (data.conversations.length > 1) {
+          result.push({ role: 'system', content: `---\n# ${title}\n---` });
+        }
+        const msgs = conv.messages || conv.chats || conv.conversation || [];
+        if (Array.isArray(msgs)) {
+          result.push(...msgs.map((m: any) => this.normalizeMessage(m)));
+        }
+      });
+      return result;
+    }
+
+    throw new Error('无法识别的聊天格式，支持: messages[], contents[], conversations[] 或消息数组');
+  }
+
+  private normalizeMessage(msg: any): NormalizedMessage {
+    const role = msg.role || 'unknown';
+    let content = '';
+
+    if (typeof msg.content === 'string') {
+      content = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      content = msg.content
+        .filter((p: any) => p.type === 'text')
+        .map((p: any) => p.text || '')
+        .join('\n');
+      const imageParts = msg.content.filter((p: any) => p.type === 'image_url' || p.type === 'image');
+      if (imageParts.length > 0) {
+        content += '\n\n_[图片内容]_';
+      }
+    } else if (msg.content && typeof msg.content === 'object') {
+      content = JSON.stringify(msg.content, null, 2);
+    }
+
+    const timestamp = msg.timestamp || msg.created_at || msg.created || msg.time;
+
+    return {
+      role,
+      content,
+      name: msg.name,
+      timestamp,
+      tool_calls: msg.tool_calls,
+      tool_call_id: msg.tool_call_id,
+    };
+  }
+
+  private normalizeGeminiContent(content: any): NormalizedMessage {
+    const role = content.role === 'model' ? 'assistant' : content.role || 'user';
+    let text = '';
+
+    if (content.parts && Array.isArray(content.parts)) {
+      text = content.parts
+        .filter((p: any) => p.text !== undefined)
+        .map((p: any) => p.text)
+        .join('\n');
+      const hasInlineData = content.parts.some((p: any) => p.inline_data);
+      if (hasInlineData) {
+        text += '\n\n_[附件内容]_';
+      }
+    }
+
+    return { role, content: text };
+  }
+
+  private renderChatToMarkdown(messages: NormalizedMessage[], options: ChatConverterOptions): string {
+    const hasTimestamp = options.includeTimestamp !== false;
+    let result = '# 对话记录\n\n';
+    let msgIndex = 0;
+
+    messages.forEach((msg) => {
+      if (msg.role === 'system' && msg.content.startsWith('---\n# ')) {
+        result += `${msg.content}\n\n`;
+        return;
+      }
+
+      msgIndex++;
+      const roleLabel = this.getRoleLabel(msg.role);
+      const ts = hasTimestamp && msg.timestamp ? ` (${msg.timestamp})` : '';
+      result += `## ${msgIndex}. ${roleLabel}${ts}\n\n`;
+
+      if (msg.name) {
+        result += `> **名称**: ${msg.name}\n\n`;
+      }
+
+      if (msg.content) {
+        const processed = this.processContent(msg.content);
+        result += `${processed}\n\n`;
+      }
+
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        result += '**工具调用:**\n\n';
+        msg.tool_calls.forEach((tc) => {
+          const idStr = tc.id ? ` (ID: \`${tc.id}\`)` : '';
+          result += `- **${tc.function.name}**${idStr}\n`;
+          try {
+            const args = JSON.parse(tc.function.arguments);
+            result += `  \`\`\`json\n  ${JSON.stringify(args, null, 2).replace(/\n/g, '\n  ')}\n  \`\`\`\n`;
+          } catch {
+            result += `  \`\`\`\n  ${tc.function.arguments}\n  \`\`\`\n`;
+          }
+        });
+        result += '\n';
+      }
+
+      if (msg.tool_call_id) {
+        result += `> 工具响应 \`${msg.tool_call_id}\`\n\n`;
+      }
+
+      result += '---\n\n';
     });
 
+    if (msgIndex === 0) {
+      result += '_（无消息）_\n';
+    }
+
     return result.trim();
+  }
+
+  private getRoleLabel(role: string): string {
+    switch (role) {
+      case 'user': return '💬 用户';
+      case 'assistant': return '🤖 助手';
+      case 'system': return '⚙️ 系统';
+      case 'tool': return '🔧 工具';
+      case 'model': return '🤖 模型';
+      default: return role.charAt(0).toUpperCase() + role.slice(1);
+    }
   }
 
   private convertWithTemplate(data: any): string {
