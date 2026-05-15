@@ -329,25 +329,25 @@
         if (this.isJsonString(value) || this.isCodeString(value)) {
           return `\n${' '.repeat(this.indent * depth)}\`\`\`json\n${value}\n${' '.repeat(this.indent * depth)}\`\`\``;
         }
-        return `"${value}"`;
+        return value;
       }
 
       isJsonString(value) {
         try {
-          JSON.parse(value);
-          return true;
+          const parsed = JSON.parse(value);
+          return typeof parsed === 'object' && parsed !== null;
         } catch {
           return false;
         }
       }
 
       isCodeString(value) {
+        const trimmed = value.trim();
         const codePatterns = [
-          /^(function|const|let|var|class|import|export)/,
-          /^\s*\{.*\}\s*$/,
-          /^\s*\[.*\]\s*$/
+          /^(function|const|let|var|class|import|export)\s/,
+          /^[a-zA-Z_$][\w$]*\s*\(.*\)\s*\{/,
         ];
-        return codePatterns.some(pattern => pattern.test(value.trim()));
+        return codePatterns.some(pattern => pattern.test(trimmed));
       }
 
       convertArray(arr, depth) {
@@ -358,14 +358,16 @@
         let result = '\n';
 
         arr.forEach((item, index) => {
-          const itemStr = this.convertToMarkdown(item, depth + 1);
-          const isNested = typeof item === 'object' && item !== null;
-          if (isNested && !Array.isArray(item)) {
-            const title = `### ${index + 1}. ${Object.keys(item)[0] || 'Item'}`;
-            result += `${indentStr}- ${title}\n`;
-            const nestedContent = this.convertToMarkdown(item, depth + 1);
-            result += nestedContent;
+          const isObjectItem = typeof item === 'object' && item !== null && !Array.isArray(item);
+          if (isObjectItem) {
+            result += `${indentStr}- **Item ${index + 1}**\n`;
+            const keys = Object.keys(item);
+            keys.forEach(key => {
+              const val = this.convertToMarkdown(item[key], depth + 2);
+              result += `${' '.repeat(this.indent * (depth + 1))}- **${key}**: ${val.trimStart()}\n`;
+            });
           } else {
+            const itemStr = this.convertToMarkdown(item, depth + 1);
             result += `${indentStr}- ${itemStr}\n`;
           }
         });
@@ -378,26 +380,35 @@
         if (!arr.every(item => typeof item === 'object' && item !== null && !Array.isArray(item))) {
           return false;
         }
-        const keys = Object.keys(arr[0]);
+        const allKeys = new Set();
+        arr.forEach(item => Object.keys(item).forEach(k => allKeys.add(k)));
         return arr.every(item => {
           const itemKeys = Object.keys(item);
-          return itemKeys.length === keys.length && keys.every(key => itemKeys.includes(key));
+          return allKeys.size === itemKeys.length && [...allKeys].every(key => itemKeys.includes(key));
         });
       }
 
       convertToTable(arr) {
         if (arr.length === 0) return '[]';
-        const keys = Object.keys(arr[0]);
+        const allKeys = new Set();
+        arr.forEach(item => Object.keys(item).forEach(k => allKeys.add(k)));
+        const keys = [...allKeys];
         const header = `| ${keys.join(' | ')} |`;
         const separator = `| ${keys.map(() => '---').join(' | ')} |`;
 
         const rows = arr.map(item => {
           const values = keys.map(key => {
             const value = item[key];
-            if (typeof value === 'string' && value.length > 50) {
-              return value.substring(0, 50) + '...';
+            if (value === null || value === undefined) return '';
+            if (typeof value === 'object') {
+              return JSON.stringify(value).substring(0, 50);
             }
-            return String(value);
+            const str = String(value);
+            const cleaned = str.replace(/\n/g, ' ').replace(/\|/g, '\\|');
+            if (cleaned.length > 50) {
+              return cleaned.substring(0, 50) + '...';
+            }
+            return cleaned;
           });
           return `| ${values.join(' | ')} |`;
         });
@@ -418,7 +429,11 @@
           const titleLevel = Math.min(depth + 1, 6);
           const title = '#'.repeat(titleLevel) + ' ' + key;
 
-          result += `\n${indentStr}${title}\n`;
+          if (index === 0) {
+            result += `${indentStr}${title}\n`;
+          } else {
+            result += `\n${indentStr}${title}\n`;
+          }
           result += this.convertToMarkdown(value, depth + 1);
 
           if (!isLast && depth < 4) result += '\n';

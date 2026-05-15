@@ -15,7 +15,7 @@ program
   .option('--json <string>', 'Input JSON string')
   .option('--input <file>', 'Input JSON file path')
   .option('--output <file>', 'Output Markdown file path')
-  .option('--indent <number>', 'Indentation spaces', parseInt, 2)
+  .option('--indent <number>', 'Indentation spaces', (v) => parseInt(v, 10), 2)
   .option('--sort', 'Sort keys alphabetically')
   .option('--gui', 'Launch GUI interface')
   .option('--template <file>', 'Custom template file path')
@@ -29,12 +29,11 @@ async function main() {
   try {
     if (options.gui) {
       try {
-        await import('./gui');
         const { launchGui } = await import('./gui');
         await launchGui();
       } catch (error) {
         console.error('Failed to launch GUI:', (error as Error).message);
-        console.error('Make sure Electron is installed: npm install electron -D');
+        console.error('Run: npx electron dist/gui.js');
         process.exit(1);
       }
       return;
@@ -82,4 +81,7 @@ async function main() {
   }
 }
 
-main();
+main().catch((error) => {
+  console.error(`Fatal error: ${(error as Error).message}`);
+  process.exit(1);
+});

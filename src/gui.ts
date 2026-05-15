@@ -10,12 +10,12 @@ export async function launchGui(): Promise<void> {
         height: 800,
         title: 'JSON to Markdown Converter',
         webPreferences: {
-          nodeIntegration: true,
-          contextIsolation: false,
+          nodeIntegration: false,
+          contextIsolation: true,
         },
       });
 
-      win.loadFile(path.join(__dirname, '../dist/gui/index.html'));
+      win.loadFile(path.join(__dirname, '../gui.html'));
     }
 
     app.whenReady().then(() => {
