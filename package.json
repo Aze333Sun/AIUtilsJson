@@ -1,0 +1,35 @@
+{
+  "name": "json2md",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "bin": {
+    "json2md": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "test": "jest",
+    "dev": "ts-node src/cli.ts"
+  },
+  "keywords": [
+    "json",
+    "markdown",
+    "converter",
+    "cli"
+  ],
+  "author": "",
+  "license": "MIT",
+  "description": "Convert JSON to structured Markdown format",
+  "devDependencies": {
+    "@types/electron": "^1.4.38",
+    "@types/node": "^25.8.0",
+    "electron": "^42.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@types/handlebars": "^4.0.40",
+    "commander": "^14.0.3",
+    "handlebars": "^4.7.9"
+  }
+}

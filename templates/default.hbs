@@ -1,0 +1,11 @@
+{{#if title}}# {{title}}
+
+{{/if}}{{#each this as |value key|}}## {{key}}
+
+{{#if (isArray value)}}{{#each value as |item index|}}### {{index add 1}}. {{#if (isObject item)}}{{#each item as |itemValue itemKey|}}{{itemKey}}: {{itemValue}}{{/each}}{{else}}{{item}}{{/if}}
+{{/each}}{{else if (isObject value)}}{{#each value as |nestedValue nestedKey|}}#### {{nestedKey}}
+
+{{nestedValue}}
+{{/each}}{{else}}{{value}}{{/if}}
+
+{{/each}}
