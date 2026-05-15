@@ -34,37 +34,33 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.launchGui = launchGui;
-async function launchGui() {
-    try {
-        const electron = await Promise.resolve().then(() => __importStar(require('electron')));
-        const path = await Promise.resolve().then(() => __importStar(require('path')));
-        const { app, BrowserWindow } = electron;
-        function createWindow() {
-            const win = new BrowserWindow({
-                width: 1200,
-                height: 800,
-                title: 'JSON 转 Markdown 转换器',
-                webPreferences: {
-                    nodeIntegration: false,
-                    contextIsolation: true,
-                },
-            });
-            win.loadFile(path.join(__dirname, '../gui.html'));
-        }
-        app.whenReady().then(() => {
-            createWindow();
-            app.on('activate', () => {
-                if (BrowserWindow.getAllWindows().length === 0)
-                    createWindow();
-            });
+const electron_1 = require("electron");
+const path = __importStar(require("path"));
+function launchGui() {
+    function createWindow() {
+        const win = new electron_1.BrowserWindow({
+            width: 1200,
+            height: 800,
+            title: 'JSON 转 Markdown 转换器',
+            webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+            },
         });
-        app.on('window-all-closed', () => {
-            if (process.platform !== 'darwin')
-                app.quit();
+        win.loadFile(path.join(__dirname, '../gui.html'));
+    }
+    electron_1.app.whenReady().then(() => {
+        createWindow();
+        electron_1.app.on('activate', () => {
+            if (electron_1.BrowserWindow.getAllWindows().length === 0)
+                createWindow();
         });
-    }
-    catch (error) {
-        console.error('Electron 未安装，请先执行: npm install electron -D');
-        process.exit(1);
-    }
+    });
+    electron_1.app.on('window-all-closed', () => {
+        if (process.platform !== 'darwin')
+            electron_1.app.quit();
+    });
+}
+if (require.main === module) {
+    launchGui();
 }

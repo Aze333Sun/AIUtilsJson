@@ -28,15 +28,9 @@ const options = program.opts();
 async function main() {
   try {
     if (options.gui) {
-      try {
-        const { launchGui } = await import('./gui');
-        await launchGui();
-      } catch (error) {
-        console.error('启动图形界面失败:', (error as Error).message);
-        console.error('请运行: npx electron dist/gui.js');
-        process.exit(1);
-      }
-      return;
+      console.log('请使用以下命令启动图形界面:');
+      console.log('  npx electron dist/gui.js');
+      process.exit(0);
     }
 
     let jsonContent: string;
