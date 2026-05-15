@@ -6,7 +6,7 @@ export function launchGui(): void {
     const win = new BrowserWindow({
       width: 1200,
       height: 800,
-      title: 'JSON 转 Markdown 转换器',
+      title: 'Json处理器',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
