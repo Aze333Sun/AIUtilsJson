@@ -299,6 +299,107 @@
     .convert-tools.visible {
       display: flex;
     }
+
+    .view-toggle {
+      display: flex;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .view-toggle button {
+      padding: 4px 14px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 12px;
+      color: #999;
+      transition: all 0.2s;
+    }
+
+    .view-toggle button.active {
+      background: #667eea;
+      color: white;
+    }
+
+    .view-toggle button:not(.active):hover {
+      background: #eee;
+    }
+
+    .json-tree {
+      flex: 1;
+      overflow: auto;
+      padding: 16px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      background: #1e1e1e;
+      display: none;
+    }
+
+    .json-tree.visible {
+      display: block;
+    }
+
+    .json-tree .toggle {
+      cursor: pointer;
+      user-select: none;
+      color: #888;
+      margin-right: 4px;
+      font-size: 11px;
+    }
+
+    .json-tree .toggle:hover {
+      color: #ccc;
+    }
+
+    .json-tree .key {
+      color: #9cdcfe;
+    }
+
+    .json-tree .colon {
+      color: #d4d4d4;
+    }
+
+    .json-tree .string {
+      color: #ce9178;
+    }
+
+    .json-tree .number {
+      color: #b5cea8;
+    }
+
+    .json-tree .boolean {
+      color: #569cd6;
+    }
+
+    .json-tree .null {
+      color: #569cd6;
+    }
+
+    .json-tree .bracket {
+      color: #d4d4d4;
+    }
+
+    .json-tree .collapsed > .children {
+      display: none;
+    }
+
+    .json-tree .collapsed > .toggle::before {
+      content: '\25B6';
+    }
+
+    .json-tree .expanded > .toggle::before {
+      content: '\25BC';
+    }
+
+    .json-tree .entry {
+      padding-left: 20px;
+    }
+
+    .json-tree .children {
+      padding-left: 0;
+    }
   </style>
 </head>
 <body>
@@ -317,6 +418,10 @@
       <div class="panel-header">
         <h2>JSON 输入</h2>
         <div class="editor-tools" id="editorTools">
+          <div class="view-toggle">
+            <button class="active" data-view="raw">原始</button>
+            <button data-view="tree">树形</button>
+          </div>
           <span style="font-size: 12px; color: #999;">拖拽 JSON 文件到此处</span>
           <button class="btn btn-secondary" id="saveBtn">保存</button>
           <button class="btn btn-secondary" id="saveAsBtn">另存为...</button>
@@ -337,6 +442,7 @@
           将 JSON 文件拖拽到此处
         </div>
         <textarea id="jsonInput" placeholder='{"name": "在此粘贴 JSON 数据"}'></textarea>
+        <div class="json-tree" id="jsonTree"></div>
       </div>
     </div>
 
@@ -796,6 +902,84 @@
     const tabBtns = document.querySelectorAll('.tab-btn');
     const STORAGE_KEY = 'json2md_input';
     let currentFileName = 'data.json';
+    let currentView = 'raw';
+
+    function renderJsonTree() {
+      const container = document.getElementById('jsonTree');
+      const text = jsonInput.value.trim();
+      if (!text) { container.innerHTML = ''; return; }
+      try {
+        const data = JSON.parse(text);
+        container.innerHTML = buildTree(data);
+        container.querySelectorAll('.toggle').forEach(el => {
+          el.addEventListener('click', () => {
+            const parent = el.parentElement;
+            parent.classList.toggle('collapsed');
+            parent.classList.toggle('expanded');
+          });
+        });
+      } catch {
+        container.innerHTML = '<span style="color:#f48771;">无效 JSON</span>';
+      }
+    }
+
+    function buildTree(value, key = null) {
+      if (value === null) {
+        const k = key ? `<span class="key">"${key}"</span><span class="colon">: </span>` : '';
+        return k + '<span class="null">null</span>';
+      }
+      if (typeof value === 'boolean') {
+        const k = key ? `<span class="key">"${key}"</span><span class="colon">: </span>` : '';
+        return k + '<span class="boolean">' + value + '</span>';
+      }
+      if (typeof value === 'number') {
+        const k = key ? `<span class="key">"${key}"</span><span class="colon">: </span>` : '';
+        return k + '<span class="number">' + value + '</span>';
+      }
+      if (typeof value === 'string') {
+        const k = key ? `<span class="key">"${key}"</span><span class="colon">: </span>` : '';
+        const escaped = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return k + '<span class="string">"' + escaped + '"</span>';
+      }
+      if (Array.isArray(value)) {
+        const k = key ? `<span class="key">"${key}"</span><span class="colon">: </span>` : '';
+        if (value.length === 0) return k + '<span class="bracket">[]</span>';
+        const items = value.map((v, i) => '<div class="entry">' + buildTree(v, i) + '<span class="bracket">,</span></div>');
+        items[items.length - 1] = items[items.length - 1].replace(',</div>', '</div>');
+        return '<div class="expanded"><span class="toggle"></span>' + k + '<span class="bracket">[</span><span class="bracket" style="color:#888;" id="count">' + value.length + '</span><span class="bracket">]</span><div class="children">' + items.join('') + '</div></div>';
+      }
+      if (typeof value === 'object') {
+        const k = key ? `<span class="key">"${key}"</span><span class="colon">: </span>` : '';
+        const keys = Object.keys(value);
+        if (keys.length === 0) return k + '<span class="bracket">{}</span>';
+        const items = keys.map(k2 => '<div class="entry">' + buildTree(value[k2], k2) + '<span class="bracket">,</span></div>');
+        items[items.length - 1] = items[items.length - 1].replace(',</div>', '</div>');
+        return '<div class="expanded"><span class="toggle"></span>' + k + '<span class="bracket">{</span><span class="bracket" style="color:#888;" id="count">' + keys.length + '</span><span class="bracket">}</span><div class="children">' + items.join('') + '</div></div>';
+      }
+      return '';
+    }
+
+    document.querySelectorAll('.view-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentView = btn.dataset.view;
+        const tree = document.getElementById('jsonTree');
+        const textarea = document.getElementById('jsonInput');
+        if (currentView === 'tree') {
+          textarea.style.display = 'none';
+          tree.classList.add('visible');
+          renderJsonTree();
+        } else {
+          textarea.style.display = '';
+          tree.classList.remove('visible');
+        }
+      });
+    });
+
+    jsonInput.addEventListener('input', () => {
+      if (currentView === 'tree') renderJsonTree();
+    });
 
     function showToast(message, type = 'success') {
       toast.textContent = message;
