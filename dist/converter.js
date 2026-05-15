@@ -58,11 +58,10 @@ class JsonToMarkdownConverter {
             .replace(/\\t/g, '\t')
             .replace(/\\"/g, '"')
             .replace(/\\'/g, "'");
-        if (result.startsWith('```') || result.endsWith('```') || result.includes('\n```') || result.includes('```\n')) {
-            return result;
-        }
-        const hasCodePattern = /```[\s\S]*```/.test(result);
-        if (hasCodePattern) {
+        const hasCodeFence = result.startsWith('```') || result.endsWith('```') || result.includes('\n```') || result.includes('```\n');
+        const hasCodeBlock = /```[\s\S]*```/.test(result);
+        const hasTable = /\|.+\|/.test(result) && /\|[\s\-:]+\|/m.test(result);
+        if (hasCodeFence || hasCodeBlock || hasTable) {
             return result;
         }
         const lines = result.split('\n');
@@ -110,7 +109,14 @@ class JsonToMarkdownConverter {
     }
     detectAndNormalizeChat(data) {
         if (Array.isArray(data)) {
-            return data.map(m => this.normalizeMessage(m));
+            if (data.length > 0 && data[0].mapping) {
+                return this.normalizeChatGPTHistory(data);
+            }
+            return data.map((m) => this.normalizeMessage(m));
+        }
+        if (data.mapping) {
+            const convs = this.normalizeChatGPTMapping(data);
+            return convs;
         }
         if (data.messages && Array.isArray(data.messages)) {
             return data.messages.map((m) => this.normalizeMessage(m));
@@ -132,13 +138,110 @@ class JsonToMarkdownConverter {
             });
             return result;
         }
-        throw new Error('无法识别的聊天格式，支持: messages[], contents[], conversations[] 或消息数组');
+        throw new Error('无法识别的聊天格式，支持: messages[], contents[], conversations[], mapping 或消息数组');
+    }
+    normalizeChatGPTHistory(history) {
+        const result = [];
+        history.forEach((conv, idx) => {
+            const title = conv.title || `对话 ${idx + 1}`;
+            if (history.length > 1) {
+                result.push({ role: 'system', content: `---\n# ${title}\n---` });
+            }
+            const msgs = this.buildMessagesFromMapping(conv.mapping, title);
+            result.push(...msgs);
+        });
+        return result;
+    }
+    normalizeChatGPTMapping(data) {
+        const title = data.title || '对话记录';
+        return this.buildMessagesFromMapping(data.mapping, title);
+    }
+    buildMessagesFromMapping(mapping, title) {
+        const messages = [];
+        const nodeMap = mapping;
+        const nodeIds = Object.keys(nodeMap);
+        const childrenMap = {};
+        const parentMap = {};
+        let rootId = null;
+        nodeIds.forEach((id) => {
+            const node = nodeMap[id];
+            const parent = node.parent || null;
+            parentMap[id] = parent;
+            if (!parent) {
+                rootId = id;
+            }
+            else {
+                if (!childrenMap[parent])
+                    childrenMap[parent] = [];
+                childrenMap[parent].push(id);
+            }
+        });
+        if (!rootId && nodeIds.length > 0) {
+            let candidate = nodeIds[0];
+            for (let i = 0; i < nodeIds.length; i++) {
+                const p = parentMap[candidate];
+                if (!p)
+                    break;
+                candidate = p;
+            }
+            rootId = candidate;
+        }
+        if (!rootId)
+            return messages;
+        const orderedIds = [];
+        const walk = (id) => {
+            const children = childrenMap[id] || [];
+            children.forEach((childId) => {
+                orderedIds.push(childId);
+                walk(childId);
+            });
+        };
+        walk(rootId);
+        orderedIds.forEach((id) => {
+            const node = nodeMap[id];
+            const msg = node.message;
+            if (!msg)
+                return;
+            if (msg.author && msg.author.role === 'user') {
+                msg.role = 'user';
+            }
+            else if (msg.author && msg.author.role === 'assistant') {
+                msg.role = 'assistant';
+            }
+            else if (msg.author && msg.author.role === 'system') {
+                msg.role = 'system';
+            }
+            else if (msg.author && msg.author.role === 'tool') {
+                msg.role = 'tool';
+            }
+            const normalized = this.normalizeMessage(msg);
+            if (msg.metadata?.model_slug) {
+                normalized.content = `_模型: ${msg.metadata.model_slug}_\n\n${normalized.content}`;
+            }
+            messages.push(normalized);
+        });
+        if (messages.length === 0 && title) {
+            messages.push({ role: 'system', content: `_（对话"${title}"无有效消息）_` });
+        }
+        return messages;
     }
     normalizeMessage(msg) {
         const role = msg.role || 'unknown';
         let content = '';
         if (typeof msg.content === 'string') {
             content = msg.content;
+        }
+        else if (msg.content && typeof msg.content === 'object') {
+            const parts = msg.content.parts;
+            if (Array.isArray(parts)) {
+                content = parts.filter((p) => typeof p === 'string').join('\n');
+            }
+            else if (msg.content.content_type === 'text' && typeof msg.content.text === 'string') {
+                content = msg.content.text;
+            }
+            else {
+                content = JSON.stringify(msg.content, null, 2);
+            }
         }
         else if (Array.isArray(msg.content)) {
             content = msg.content
@@ -150,18 +253,36 @@ class JsonToMarkdownConverter {
                 content += '\n\n_[图片内容]_';
             }
         }
-        else if (msg.content && typeof msg.content === 'object') {
-            content = JSON.stringify(msg.content, null, 2);
+        const timestamp = msg.timestamp || msg.created_at || msg.created || msg.time || msg.create_time;
+        let tool_calls = msg.tool_calls;
+        if (msg.content?.tool_calls) {
+            tool_calls = msg.content.tool_calls;
         }
-        const timestamp = msg.timestamp || msg.created_at || msg.created || msg.time;
         return {
             role,
-            content,
+            content: content || '',
             name: msg.name,
-            timestamp,
-            tool_calls: msg.tool_calls,
+            timestamp: this.formatTimestamp(timestamp),
+            tool_calls,
             tool_call_id: msg.tool_call_id,
         };
+    }
+    formatTimestamp(ts) {
+        if (!ts)
+            return undefined;
+        if (typeof ts === 'number') {
+            try {
+                const d = new Date(ts * 1000);
+                return d.toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
+            }
+            catch {
+                return String(ts);
+            }
+        }
+        if (typeof ts === 'string') {
+            return ts.replace('T', ' ').replace(/\.\d+Z/, '').replace(/\.\d+/, '');
+        }
+        return String(ts);
     }
     normalizeGeminiContent(content) {
         const role = content.role === 'model' ? 'assistant' : content.role || 'user';
@@ -189,7 +310,7 @@ class JsonToMarkdownConverter {
             }
             msgIndex++;
             const roleLabel = this.getRoleLabel(msg.role);
-            const ts = hasTimestamp && msg.timestamp ? ` (${msg.timestamp})` : '';
+            const ts = hasTimestamp && msg.timestamp ? ` | ${msg.timestamp}` : '';
             result += `## ${msgIndex}. ${roleLabel}${ts}\n\n`;
             if (msg.name) {
                 result += `> **名称**: ${msg.name}\n\n`;
@@ -225,11 +346,11 @@ class JsonToMarkdownConverter {
     }
     getRoleLabel(role) {
         switch (role) {
-            case 'user': return '💬 用户';
-            case 'assistant': return '🤖 助手';
-            case 'system': return '⚙️ 系统';
-            case 'tool': return '🔧 工具';
-            case 'model': return '🤖 模型';
+            case 'user': return '用户';
+            case 'assistant': return '助手';
+            case 'system': return '系统';
+            case 'tool': return '工具';
+            case 'model': return '模型';
             default: return role.charAt(0).toUpperCase() + role.slice(1);
         }
     }
