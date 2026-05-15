@@ -19,7 +19,7 @@
   ],
   "author": "",
   "license": "MIT",
-  "description": "Convert JSON to structured Markdown format",
+  "description": "将 JSON 转换为结构化 Markdown 格式",
   "devDependencies": {
     "@types/handlebars": "^4.0.40",
     "@types/jest": "^29.5.0",

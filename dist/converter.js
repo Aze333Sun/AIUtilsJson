@@ -83,7 +83,7 @@ class JsonToMarkdownConverter {
                 data = JSON.parse(sanitized);
             }
             catch (sanitizeError) {
-                throw new Error(`Invalid JSON: ${sanitizeError.message}`);
+                throw new Error(`无效的JSON: ${sanitizeError.message}`);
             }
         }
         if (this.template) {
@@ -102,11 +102,11 @@ class JsonToMarkdownConverter {
                 data = JSON.parse(sanitized);
             }
             catch (sanitizeError) {
-                throw new Error(`Invalid JSON: ${sanitizeError.message}`);
+                throw new Error(`无效的JSON: ${sanitizeError.message}`);
             }
         }
         if (!data.messages || !Array.isArray(data.messages)) {
-            throw new Error('Invalid chat format: missing or invalid messages array');
+            throw new Error('无效的聊天格式: 缺少或无效的 messages 数组');
         }
         return this.convertChatToMarkdown(data.messages, options);
     }
@@ -132,7 +132,7 @@ class JsonToMarkdownConverter {
             templateContent = fs.readFileSync(this.template, 'utf-8');
         }
         catch (error) {
-            throw new Error(`Failed to read template file: ${error.message}`);
+            throw new Error(`读取模板文件失败: ${error.message}`);
         }
         handlebars.registerHelper('isArray', function (value) {
             return Array.isArray(value);

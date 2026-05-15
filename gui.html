@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JSON to Markdown Converter</title>
+  <title>JSON 转 Markdown 转换器</title>
   <style>
     * {
       margin: 0;
@@ -239,38 +239,38 @@
 </head>
 <body>
   <div class="header">
-    <h1>JSON to Markdown Converter</h1>
+    <h1>JSON 转 Markdown 转换器</h1>
     <div class="toolbar">
       <select class="template-select" id="templateSelect">
-        <option value="">Default Template</option>
-        <option value="custom">Custom Template</option>
+        <option value="">默认模板</option>
+        <option value="custom">自定义模板</option>
       </select>
-      <button class="btn btn-secondary" id="copyBtn">Copy</button>
-      <button class="btn btn-warning" id="exportBtn">Export</button>
-      <button class="btn btn-secondary" id="clearBtn">Clear</button>
+      <button class="btn btn-secondary" id="copyBtn">复制</button>
+      <button class="btn btn-warning" id="exportBtn">导出</button>
+      <button class="btn btn-secondary" id="clearBtn">清空</button>
     </div>
   </div>
 
   <div class="main-content">
     <div class="panel">
       <div class="panel-header">
-        <h2>JSON Input</h2>
-        <span style="font-size: 12px; color: #999;">Drop JSON file here or paste JSON</span>
+        <h2>JSON 输入</h2>
+        <span style="font-size: 12px; color: #999;">拖拽 JSON 文件到此处或粘贴 JSON</span>
       </div>
       <div class="panel-body">
         <div class="drop-zone" id="dropZone">
-          Drop JSON file here
+          将 JSON 文件拖拽到此处
         </div>
-        <textarea id="jsonInput" placeholder='{"name": "Your JSON data here"}'></textarea>
+        <textarea id="jsonInput" placeholder='{"name": "在此粘贴 JSON 数据"}'></textarea>
       </div>
     </div>
 
     <div class="panel">
       <div class="panel-header">
-        <h2>Markdown Output</h2>
+        <h2>Markdown 输出</h2>
         <div class="checkbox-group">
-          <label><input type="checkbox" id="sortCheck"> Sort Keys</label>
-          <span id="charCount" style="font-size: 12px; color: #999;">0 characters</span>
+          <label><input type="checkbox" id="sortCheck"> 排序键名</label>
+          <span id="charCount" style="font-size: 12px; color: #999;">0 字符</span>
         </div>
       </div>
       <div class="panel-body">
@@ -280,7 +280,7 @@
   </div>
 
   <div class="status-bar">
-    <span id="status">Ready</span>
+    <span id="status">就绪</span>
     <span id="conversionTime">0ms</span>
   </div>
 
@@ -466,13 +466,13 @@
       const jsonText = jsonInput.value.trim();
       if (!jsonText) {
         outputArea.textContent = '';
-        charCount.textContent = '0 characters';
+        charCount.textContent = '0 字符';
         conversionTime.textContent = '0ms';
-        status.textContent = 'Ready';
+        status.textContent = '就绪';
         return;
       }
 
-      status.textContent = 'Converting...';
+      status.textContent = '转换中...';
       const startTime = Date.now();
 
       try {
@@ -482,12 +482,12 @@
         });
         const result = converter.convert(jsonText);
         outputArea.textContent = result;
-        charCount.textContent = `${result.length} characters`;
-        status.textContent = 'Success';
+        charCount.textContent = `${result.length} 字符`;
+        status.textContent = '成功';
       } catch (error) {
-        outputArea.textContent = `Error: ${error.message}`;
-        status.textContent = 'Error';
-        showToast('Invalid JSON!', 'error');
+        outputArea.textContent = `错误: ${error.message}`;
+        status.textContent = '错误';
+        showToast('无效的 JSON！', 'error');
       }
 
       const endTime = Date.now();
@@ -518,11 +518,11 @@
           reader.onload = (event) => {
             jsonInput.value = event.target.result;
             convertJson();
-            showToast(`Loaded ${file.name}`);
+            showToast(`已加载 ${file.name}`);
           };
           reader.readAsText(file);
         } else {
-          showToast('Please drop a JSON file!', 'error');
+          showToast('请拖入 JSON 文件！', 'error');
         }
       }
     });
@@ -530,22 +530,22 @@
     copyBtn.addEventListener('click', async () => {
       const text = outputArea.textContent;
       if (!text) {
-        showToast('Nothing to copy!', 'error');
+        showToast('没有内容可复制！', 'error');
         return;
       }
 
       try {
         await navigator.clipboard.writeText(text);
-        showToast('Copied to clipboard!');
+        showToast('已复制到剪贴板！');
       } catch (error) {
-        showToast('Copy failed!', 'error');
+        showToast('复制失败！', 'error');
       }
     });
 
     exportBtn.addEventListener('click', () => {
       const text = outputArea.textContent;
       if (!text) {
-        showToast('Nothing to export!', 'error');
+        showToast('没有内容可导出！', 'error');
         return;
       }
 
@@ -559,7 +559,7 @@
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      showToast('Exported successfully!');
+      showToast('导出成功！');
     });
 
     clearBtn.addEventListener('click', () => {
@@ -568,22 +568,22 @@
       charCount.textContent = '0 characters';
       conversionTime.textContent = '0ms';
       status.textContent = 'Ready';
-      showToast('Cleared!');
+      showToast('已清空！');
     });
 
     jsonInput.value = `{
-  "name": "Example Project",
+  "name": "示例项目",
   "version": "1.0.0",
-  "description": "A sample JSON to demonstrate the converter",
-  "author": "Developer",
+  "description": "一个演示 JSON 转换器的示例",
+  "author": "开发者",
   "tags": ["json", "markdown", "converter"],
   "config": {
     "indent": 2,
     "sort": true
   },
   "items": [
-    {"id": 1, "name": "Item 1", "value": 100},
-    {"id": 2, "name": "Item 2", "value": 200}
+    {"id": 1, "name": "项目一", "value": 100},
+    {"id": 2, "name": "项目二", "value": 200}
   ]
 }`;
     convertJson();

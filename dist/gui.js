@@ -43,7 +43,7 @@ async function launchGui() {
             const win = new BrowserWindow({
                 width: 1200,
                 height: 800,
-                title: 'JSON to Markdown Converter',
+                title: 'JSON 转 Markdown 转换器',
                 webPreferences: {
                     nodeIntegration: false,
                     contextIsolation: true,
@@ -64,7 +64,7 @@ async function launchGui() {
         });
     }
     catch (error) {
-        console.error('Electron is not installed. Please install it first: npm install electron -D');
+        console.error('Electron 未安装，请先执行: npm install electron -D');
         process.exit(1);
     }
 }

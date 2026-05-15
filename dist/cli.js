@@ -40,17 +40,17 @@ const converter_1 = require("./converter");
 const program = new commander_1.Command();
 program
     .name('json2md')
-    .description('Convert JSON to Markdown')
+    .description('将 JSON 转换为结构化 Markdown')
     .version('1.0.0');
 program
-    .option('--json <string>', 'Input JSON string')
-    .option('--input <file>', 'Input JSON file path')
-    .option('--output <file>', 'Output Markdown file path')
-    .option('--indent <number>', 'Indentation spaces', (v) => parseInt(v, 10), 2)
-    .option('--sort', 'Sort keys alphabetically')
-    .option('--gui', 'Launch GUI interface')
-    .option('--template <file>', 'Custom template file path')
-    .option('--chat', 'Convert chat format JSON (messages array)');
+    .option('--json <string>', '输入 JSON 字符串')
+    .option('--input <file>', '输入 JSON 文件路径')
+    .option('--output <file>', '输出 Markdown 文件路径')
+    .option('--indent <number>', '缩进空格数', (v) => parseInt(v, 10), 2)
+    .option('--sort', '按键名排序')
+    .option('--gui', '启动图形界面')
+    .option('--template <file>', '自定义模板文件路径')
+    .option('--chat', '转换聊天格式 JSON (messages 数组)');
 program.parse(process.argv);
 const options = program.opts();
 async function main() {
@@ -61,8 +61,8 @@ async function main() {
                 await launchGui();
             }
             catch (error) {
-                console.error('Failed to launch GUI:', error.message);
-                console.error('Run: npx electron dist/gui.js');
+                console.error('启动图形界面失败:', error.message);
+                console.error('请运行: npx electron dist/gui.js');
                 process.exit(1);
             }
             return;
@@ -73,13 +73,13 @@ async function main() {
         }
         else if (options.input) {
             if (!fs.existsSync(options.input)) {
-                console.error(`Error: Input file '${options.input}' does not exist`);
+                console.error(`错误: 输入文件 '${options.input}' 不存在`);
                 process.exit(1);
             }
             jsonContent = fs.readFileSync(options.input, 'utf-8');
         }
         else {
-            console.error('Error: Either --json or --input must be provided');
+            console.error('错误: 必须提供 --json 或 --input 参数');
             program.help();
             process.exit(1);
         }
@@ -98,18 +98,18 @@ async function main() {
         }
         if (options.output) {
             fs.writeFileSync(options.output, result);
-            console.log(`Successfully wrote to ${options.output}`);
+            console.log(`已成功写入 ${options.output}`);
         }
         else {
             console.log(result);
         }
     }
     catch (error) {
-        console.error(`Error: ${error.message}`);
+        console.error(`错误: ${error.message}`);
         process.exit(1);
     }
 }
 main().catch((error) => {
-    console.error(`Fatal error: ${error.message}`);
+    console.error(`致命错误: ${error.message}`);
     process.exit(1);
 });
