@@ -1,6 +1,5 @@
 import * as handlebars from 'handlebars';
 import * as fs from 'fs';
-import * as path from 'path';
 
 export interface ConverterOptions {
   indent?: number;
@@ -24,7 +23,55 @@ interface NormalizedMessage {
     function: { name: string; arguments: string };
   }>;
   tool_call_id?: string;
+  model?: string;
 }
+
+const CODE_LANGUAGE_MAP: [RegExp, string][] = [
+  [/\busing\s+System/, 'csharp'],
+  [/\bnamespace\s+\w+/, 'csharp'],
+  [/\bpublic\s+(class|static|void|string|int|bool|float|double)\b/, 'csharp'],
+  [/\bprivate\s+(void|int|string|bool|float)\b/, 'csharp'],
+  [/\bConsole\.(Write|Read)/, 'csharp'],
+  [/^#\s*include\s*[<"]/, 'cpp'],
+  [/\bstd::/, 'cpp'],
+  [/\bcout\s*<</, 'cpp'],
+  [/\bprintf\s*\(/, 'c'],
+  [/\bmalloc\s*\(/, 'c'],
+  [/^import\s+(java|javax)\./, 'java'],
+  [/\bpublic\s+(static\s+)?void\s+main/, 'java'],
+  [/\bSystem\.out\.print/, 'java'],
+  [/\bdef\s+\w+\s*\(.*\)\s*:/, 'python'],
+  [/\bimport\s+\w+\s*$/, 'python'],
+  [/^from\s+\w+\s+import/, 'python'],
+  [/\bprint\s*\(/, 'python'],
+  [/\bself\.\w+/, 'python'],
+  [/^(let|const|var)\s+\w+\s*=/, 'javascript'],
+  [/\bconsole\.log/, 'javascript'],
+  [/\brequire\s*\(/, 'javascript'],
+  [/\bmodule\.exports/, 'javascript'],
+  [/^import\s+.*from\s+['"]/, 'typescript'],
+  [/:\s*(string|number|boolean|void)\s*[={]/, 'typescript'],
+  [/\binterface\s+\w+/, 'typescript'],
+  [/\btype\s+\w+\s*=/, 'typescript'],
+  [/^<!DOCTYPE\s+html/i, 'html'],
+  [/<html[\s>]/i, 'html'],
+  [/<div[\s>]/i, 'html'],
+  [/\bSELECT\s+.*\bFROM\b/i, 'sql'],
+  [/\bINSERT\s+INTO\b/i, 'sql'],
+  [/\bCREATE\s+TABLE\b/i, 'sql'],
+  [/\bUPDATE\s+\w+\s+SET\b/i, 'sql'],
+  [/^[\w.-]+\s*\{[^}]*\}/m, 'css'],
+  [/@media\s*\(/, 'css'],
+  [/\bflex-direction:/, 'css'],
+  [/^#!/, 'bash'],
+  [/\bsudo\s+/, 'bash'],
+  [/\bapt(-get)?\s+install/, 'bash'],
+  [/\bnpm\s+install/, 'bash'],
+  [/\bdocker\s+/, 'bash'],
+  [/^---\s*$/m, 'yaml'],
+  [/^\w+:\s*.+/m, 'yaml'],
+  [/^"[\w.]+"\s*:\s*"/, 'json'],
+];
 
 export class JsonToMarkdownConverter {
   private indent: number;
@@ -44,6 +91,15 @@ export class JsonToMarkdownConverter {
       .replace(/\\(?![\\/"bfnrtu])/g, '\\\\');
   }
 
+  private detectCodeLanguage(code: string): string {
+    const trimmed = code.trim();
+    if (!trimmed) return '';
+    for (const [pattern, lang] of CODE_LANGUAGE_MAP) {
+      if (pattern.test(trimmed)) return lang;
+    }
+    return '';
+  }
+
   private processContent(content: string): string {
     if (!content) return '';
 
@@ -52,6 +108,10 @@ export class JsonToMarkdownConverter {
       .replace(/\\t/g, '\t')
       .replace(/\\"/g, '"')
       .replace(/\\'/g, "'");
+
+    if (this.hasMarkdownStructure(result)) {
+      return result;
+    }
 
     const hasCodeFence = result.startsWith('```') || result.endsWith('```') || result.includes('\n```') || result.includes('```\n');
     const hasCodeBlock = /```[\s\S]*```/.test(result);
@@ -65,10 +125,25 @@ export class JsonToMarkdownConverter {
     const hasLongLine = lines.some(line => line.length > 80);
 
     if (hasLongLine || lines.length > 5) {
-      return `\`\`\`\n${result}\n\`\`\``;
+      const lang = this.detectCodeLanguage(result);
+      return `\`\`\`${lang}\n${result}\n\`\`\``;
     }
 
     return result;
+  }
+
+  private hasMarkdownStructure(text: string): boolean {
+    const patterns = [
+      /^#{1,6}\s+/m,
+      /^\*{1,3}\s+/m,
+      /^-{1,3}\s+/m,
+      /^>\s+/m,
+      /^\d+\.\s+/m,
+      /\[.*\]\(.*\)/,
+      /^---+$/m,
+      /^\|.+\|/m,
+    ];
+    return patterns.some(p => p.test(text));
   }
 
   convert(jsonString: string): string {
@@ -113,12 +188,14 @@ export class JsonToMarkdownConverter {
       if (data.length > 0 && data[0].mapping) {
         return this.normalizeChatGPTHistory(data);
       }
-      return data.map((m: any) => this.normalizeMessage(m));
+      if (data.length > 0 && this.looksLikeMessageArray(data)) {
+        return data.map((m: any) => this.normalizeMessage(m));
+      }
+      throw new Error('无法识别的聊天格式：数组中的元素不包含有效的消息结构');
     }
 
     if (data.mapping) {
-      const convs = this.normalizeChatGPTMapping(data);
-      return convs;
+      return this.normalizeChatGPTMapping(data);
     }
 
     if (data.messages && Array.isArray(data.messages)) {
@@ -130,21 +207,48 @@ export class JsonToMarkdownConverter {
     }
 
     if (data.conversations && Array.isArray(data.conversations)) {
-      const result: NormalizedMessage[] = [];
-      data.conversations.forEach((conv: any, i: number) => {
-        const title = conv.title || conv.name || `对话 ${i + 1}`;
-        if (data.conversations.length > 1) {
-          result.push({ role: 'system', content: `---\n# ${title}\n---` });
-        }
-        const msgs = conv.messages || conv.chats || conv.conversation || [];
-        if (Array.isArray(msgs)) {
-          result.push(...msgs.map((m: any) => this.normalizeMessage(m)));
-        }
-      });
-      return result;
+      return this.normalizeConversations(data);
     }
 
-    throw new Error('无法识别的聊天格式，支持: messages[], contents[], conversations[], mapping 或消息数组');
+    if (this.isDeepSeekFormat(data)) {
+      return this.normalizeDeepSeekChat(data);
+    }
+
+    if (this.isClaudeFormat(data)) {
+      return this.normalizeClaudeChat(data);
+    }
+
+    if (this.isQwenFormat(data)) {
+      return this.normalizeQwenChat(data);
+    }
+
+    if (this.isKimiFormat(data)) {
+      return this.normalizeKimiChat(data);
+    }
+
+    throw new Error('无法识别的聊天格式，支持: messages[], contents[], conversations[], mapping, deepseek, claude, qwen, kimi 或消息数组');
+  }
+
+  private looksLikeMessageArray(arr: any[]): boolean {
+    if (arr.length === 0) return false;
+    return arr.every(item =>
+      item && typeof item === 'object' && typeof item.role === 'string'
+    );
+  }
+
+  private normalizeConversations(data: any): NormalizedMessage[] {
+    const result: NormalizedMessage[] = [];
+    data.conversations.forEach((conv: any, i: number) => {
+      const title = conv.title || conv.name || `对话 ${i + 1}`;
+      if (data.conversations.length > 1) {
+        result.push({ role: 'system', content: `---\n# ${title}\n---` });
+      }
+      const msgs = conv.messages || conv.chats || conv.conversation || [];
+      if (Array.isArray(msgs)) {
+        result.push(...msgs.map((m: any) => this.normalizeMessage(m)));
+      }
+    });
+    return result;
   }
 
   private normalizeChatGPTHistory(history: any[]): NormalizedMessage[] {
@@ -245,6 +349,8 @@ export class JsonToMarkdownConverter {
 
     if (typeof msg.content === 'string') {
       content = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      content = this.normalizeContentBlocks(msg.content);
     } else if (msg.content && typeof msg.content === 'object') {
       const parts = msg.content.parts;
       if (Array.isArray(parts)) {
@@ -253,15 +359,6 @@ export class JsonToMarkdownConverter {
         content = msg.content.text;
       } else {
         content = JSON.stringify(msg.content, null, 2);
-      }
-    } else if (Array.isArray(msg.content)) {
-      content = msg.content
-        .filter((p: any) => p.type === 'text')
-        .map((p: any) => p.text || '')
-        .join('\n');
-      const imageParts = msg.content.filter((p: any) => p.type === 'image_url' || p.type === 'image');
-      if (imageParts.length > 0) {
-        content += '\n\n_[图片内容]_';
       }
     }
 
@@ -285,7 +382,37 @@ export class JsonToMarkdownConverter {
       timestamp: this.formatTimestamp(timestamp),
       tool_calls,
       tool_call_id: msg.tool_call_id,
+      model: msg.model,
     };
+  }
+
+  private normalizeContentBlocks(blocks: any[]): string {
+    const parts: string[] = [];
+    blocks.forEach((block: any) => {
+      if (typeof block === 'string') {
+        parts.push(block);
+      } else if (block.type === 'text') {
+        parts.push(block.text || '');
+      } else if (block.type === 'code') {
+        const lang = block.language || '';
+        parts.push(`\`\`\`${lang}\n${block.code || block.text || ''}\n\`\`\``);
+      } else if (block.type === 'image_url' || block.type === 'image') {
+        parts.push('_[图片内容]_');
+      } else if (block.type === 'thinking') {
+        parts.push(`> **思考过程**\n> ${this.wrapBlockquote(block.thinking || block.text || '')}`);
+      } else if (block.type === 'tool_use') {
+        parts.push(`**工具调用**: \`${block.name || 'unknown'}\`\n\`\`\`json\n${JSON.stringify(block.input || {}, null, 2)}\n\`\`\``);
+      } else if (block.type === 'tool_result') {
+        parts.push(`**工具结果**:\n\`\`\`\n${typeof block.content === 'string' ? block.content : JSON.stringify(block.content, null, 2)}\n\`\`\``);
+      } else if (block.type === 'text_delta') {
+        parts.push(block.text || '');
+      }
+    });
+    return parts.join('\n\n');
+  }
+
+  private wrapBlockquote(text: string): string {
+    return text.split('\n').map(line => `> ${line}`).join('\n');
   }
 
   private formatTimestamp(ts: any): string | undefined {
@@ -302,6 +429,219 @@ export class JsonToMarkdownConverter {
       return ts.replace('T', ' ').replace(/\.\d+Z/, '').replace(/\.\d+/, '');
     }
     return String(ts);
+  }
+
+  private isDeepSeekFormat(data: any): boolean {
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+    const keys = Object.keys(data);
+    if (keys.length === 0) return false;
+    const sampleKeys = keys.slice(0, 5);
+    let matchCount = 0;
+    sampleKeys.forEach(key => {
+      const node = data[key];
+      if (
+        node
+        && typeof node === 'object'
+        && typeof node.id !== 'undefined'
+        && node.message
+        && typeof node.message === 'object'
+        && Array.isArray(node.message.fragments)
+      ) {
+        matchCount++;
+      }
+    });
+    return matchCount > 0;
+  }
+
+  private normalizeDeepSeekChat(data: any): NormalizedMessage[] {
+    const nodeMap = data;
+    const nodeIds = Object.keys(nodeMap);
+
+    const childrenMap: { [key: string]: string[] } = {};
+    const parentMap: { [key: string]: string | null } = {};
+    let rootId: string | null = null;
+
+    nodeIds.forEach(id => {
+      const node = nodeMap[id];
+      const parent = node.parent || null;
+      parentMap[id] = parent;
+      if (!parent) {
+        rootId = id;
+      } else {
+        if (!childrenMap[parent]) childrenMap[parent] = [];
+        childrenMap[parent].push(id);
+      }
+    });
+
+    if (!rootId && nodeIds.length > 0) {
+      let candidate = nodeIds[0];
+      for (let i = 0; i < nodeIds.length; i++) {
+        const p = parentMap[candidate];
+        if (!p) break;
+        candidate = p;
+      }
+      rootId = candidate;
+    }
+
+    if (!rootId) return [];
+
+    const orderedIds: string[] = [];
+    const walk = (id: string) => {
+      const children = childrenMap[id] || [];
+      children.forEach(childId => {
+        orderedIds.push(childId);
+        walk(childId);
+      });
+    };
+    walk(rootId);
+
+    const messages: NormalizedMessage[] = [];
+    orderedIds.forEach(id => {
+      const node = nodeMap[id];
+      const msg = node.message;
+      if (!msg) return;
+
+      const fragments: NormalizedMessage[] = [];
+      if (Array.isArray(msg.fragments)) {
+        msg.fragments.forEach((frag: any) => {
+          const role = frag.type === 'REQUEST' ? 'user'
+            : frag.type === 'RESPONSE' ? 'assistant'
+            : frag.type === 'SYSTEM' ? 'system'
+            : 'unknown';
+          fragments.push({
+            role,
+            content: frag.content || '',
+            timestamp: this.formatTimestamp(msg.inserted_at),
+            model: msg.model,
+          });
+        });
+      }
+
+      if (fragments.length === 0) {
+        const content = typeof msg.content === 'string' ? msg.content : '';
+        if (content) {
+          fragments.push({ role: 'unknown', content, model: msg.model });
+        }
+      }
+
+      fragments.forEach(frag => {
+        if (msg.model && frag.role === 'assistant') {
+          frag.content = `_模型: ${msg.model}_\n\n${frag.content}`;
+        }
+        messages.push(frag);
+      });
+    });
+
+    return messages;
+  }
+
+  private isClaudeFormat(data: any): boolean {
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+    if (data.messages && Array.isArray(data.messages)) {
+      const first = data.messages[0];
+      if (first && Array.isArray(first.content) && first.content.some((b: any) =>
+        b.type === 'thinking' || b.type === 'text' || b.type === 'tool_use' || b.type === 'tool_result'
+      )) {
+        return true;
+      }
+    }
+    if (Array.isArray(data) && data.length > 0) {
+      const first = data[0];
+      if (first && Array.isArray(first.content) && first.content.some((b: any) =>
+        b.type === 'thinking' || b.type === 'text' || b.type === 'tool_use' || b.type === 'tool_result'
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private normalizeClaudeChat(data: any): NormalizedMessage[] {
+    const msgs = data.messages || (Array.isArray(data) ? data : []);
+    return msgs.map((m: any) => this.normalizeMessage(m));
+  }
+
+  private isQwenFormat(data: any): boolean {
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+    if (Array.isArray(data)) {
+      if (data.length > 0 && data[0].chatId) return true;
+    }
+    if (data.chatId || data.chat_id) return true;
+    if (data.chats && Array.isArray(data.chats)) return true;
+    return false;
+  }
+
+  private normalizeQwenChat(data: any): NormalizedMessage[] {
+    const result: NormalizedMessage[] = [];
+    const chats = data.chats || (Array.isArray(data) ? data : [data]);
+
+    chats.forEach((chat: any, idx: number) => {
+      const title = chat.title || chat.chatId || `对话 ${idx + 1}`;
+      if (chats.length > 1) {
+        result.push({ role: 'system', content: `---\n# ${title}\n---` });
+      }
+      const msgs = chat.messages || chat.chatItems || [];
+      if (Array.isArray(msgs)) {
+        msgs.forEach((m: any) => {
+          const role = m.role || m.senderType || 'unknown';
+          let content = '';
+          if (typeof m.content === 'string') {
+            content = m.content;
+          } else if (m.content && typeof m.content === 'object') {
+            content = m.content.text || m.content.body || JSON.stringify(m.content, null, 2);
+          }
+          result.push({
+            role,
+            content,
+            timestamp: this.formatTimestamp(m.createdAt || m.createTime || m.timestamp),
+            model: m.model,
+          });
+        });
+      }
+    });
+
+    return result;
+  }
+
+  private isKimiFormat(data: any): boolean {
+    if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+    if (data.chatRecords && Array.isArray(data.chatRecords)) return true;
+    if (data.item_list && Array.isArray(data.item_list)) return true;
+    return false;
+  }
+
+  private normalizeKimiChat(data: any): NormalizedMessage[] {
+    const result: NormalizedMessage[] = [];
+    const records = data.chatRecords || data.item_list || [];
+
+    if (data.name || data.title) {
+      result.push({ role: 'system', content: `---\n# ${data.name || data.title}\n---` });
+    }
+
+    records.forEach((item: any) => {
+      const role = item.role === 'user' ? 'user'
+        : item.role === 'assistant' ? 'assistant'
+        : item.role || 'unknown';
+      let content = '';
+      if (typeof item.text === 'string') {
+        content = item.text;
+      } else if (typeof item.content === 'string') {
+        content = item.content;
+      } else if (Array.isArray(item.messages)) {
+        content = item.messages
+          .map((m: any) => m.content || m.text || '')
+          .filter(Boolean)
+          .join('\n\n');
+      }
+      result.push({
+        role,
+        content,
+        timestamp: this.formatTimestamp(item.created_at || item.createTime),
+        model: item.model,
+      });
+    });
+
+    return result;
   }
 
   private normalizeGeminiContent(content: any): NormalizedMessage {
@@ -343,9 +683,9 @@ export class JsonToMarkdownConverter {
       }
 
       if (msg.reasoning_content) {
-        result += '**推理过程:**\n\n';
+        result += '> **推理过程:**\n>\n';
         const processed = this.processContent(msg.reasoning_content);
-        result += `${processed}\n\n`;
+        result += `${this.wrapBlockquote(processed)}\n\n`;
       }
 
       if (msg.content) {
@@ -445,8 +785,20 @@ export class JsonToMarkdownConverter {
   }
 
   private convertString(value: string, depth: number): string {
-    if (this.isJsonString(value) || this.isCodeString(value)) {
-      return `\n${' '.repeat(this.indent * depth)}\`\`\`json\n${value}\n${' '.repeat(this.indent * depth)}\`\`\``;
+    if (this.isJsonString(value)) {
+      const lang = 'json';
+      return `\n${' '.repeat(this.indent * depth)}\`\`\`${lang}\n${value}\n${' '.repeat(this.indent * depth)}\`\`\``;
+    }
+    if (this.isCodeString(value)) {
+      const lang = this.detectCodeLanguage(value);
+      return `\n${' '.repeat(this.indent * depth)}\`\`\`${lang}\n${value}\n${' '.repeat(this.indent * depth)}\`\`\``;
+    }
+    if (this.isMarkdownString(value)) {
+      return value;
+    }
+    if (value.includes('\n') && value.split('\n').length > 3) {
+      const lang = this.detectCodeLanguage(value);
+      return `\n${' '.repeat(this.indent * depth)}\`\`\`${lang}\n${value}\n${' '.repeat(this.indent * depth)}\`\`\``;
     }
     return value;
   }
@@ -465,8 +817,17 @@ export class JsonToMarkdownConverter {
     const codePatterns = [
       /^(function|const|let|var|class|import|export)\s/,
       /^[a-zA-Z_$][\w$]*\s*\(.*\)\s*\{/,
+      /^#\s*include\s*[<"]/,
+      /\busing\s+System/,
+      /\bnamespace\s+\w+/,
+      /\bdef\s+\w+\s*\(.*\)\s*:/,
+      /\bSELECT\s+.*\bFROM\b/i,
     ];
     return codePatterns.some(pattern => pattern.test(trimmed));
+  }
+
+  private isMarkdownString(value: string): boolean {
+    return this.hasMarkdownStructure(value);
   }
 
   private convertArray(arr: any[], depth: number): string {
@@ -505,13 +866,19 @@ export class JsonToMarkdownConverter {
       return false;
     }
 
-    const allKeys = new Set<string>();
-    arr.forEach(item => Object.keys(item).forEach(k => allKeys.add(k)));
+    const keySets = arr.map(item => new Set(Object.keys(item)));
+    if (keySets.length === 0) return false;
 
-    return arr.every(item => {
-      const itemKeys = Object.keys(item);
-      return allKeys.size === itemKeys.length && [...allKeys].every(key => itemKeys.includes(key));
-    });
+    const commonKeys = new Set([...keySets[0]]);
+    for (let i = 1; i < keySets.length; i++) {
+      for (const key of commonKeys) {
+        if (!keySets[i].has(key)) {
+          commonKeys.delete(key);
+        }
+      }
+    }
+
+    return commonKeys.size >= 2;
   }
 
   private convertToTable(arr: any[]): string {
@@ -529,12 +896,12 @@ export class JsonToMarkdownConverter {
         const value = item[key];
         if (value === null || value === undefined) return '';
         if (typeof value === 'object') {
-          return JSON.stringify(value).substring(0, 50);
+          return this.renderTableCellObject(value);
         }
         const str = String(value);
         const cleaned = str.replace(/\n/g, ' ').replace(/\|/g, '\\|');
-        if (cleaned.length > 50) {
-          return cleaned.substring(0, 50) + '...';
+        if (cleaned.length > 100) {
+          return cleaned.substring(0, 100) + '...';
         }
         return cleaned;
       });
@@ -542,6 +909,22 @@ export class JsonToMarkdownConverter {
     });
 
     return `\n${header}\n${separator}\n${rows.join('\n')}\n`;
+  }
+
+  private renderTableCellObject(value: any): string {
+    if (Array.isArray(value)) {
+      if (value.length === 0) return '[]';
+      if (value.every(v => typeof v !== 'object')) {
+        return value.join(', ');
+      }
+      return `<details><summary>[${value.length}项]</summary>${JSON.stringify(value, null, 2).replace(/\n/g, '<br>')}</details>`;
+    }
+    const json = JSON.stringify(value, null, 2);
+    const preview = json.substring(0, 80);
+    if (json.length > 80) {
+      return `<details><summary>${preview.replace(/\n/g, ' ').replace(/\|/g, '\\|')}...</summary>${json.replace(/\n/g, '<br>').replace(/\|/g, '\\|')}</details>`;
+    }
+    return preview.replace(/\n/g, ' ').replace(/\|/g, '\\|');
   }
 
   private convertObject(obj: any, depth: number): string {

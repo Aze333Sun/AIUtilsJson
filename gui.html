@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Json处理器</title>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <style>
     * {
       margin: 0;
@@ -400,6 +401,209 @@
     .json-tree .children {
       padding-left: 0;
     }
+
+    .excel-panel {
+      display: none;
+      flex: 1;
+      padding: 20px;
+      gap: 20px;
+      overflow: hidden;
+    }
+
+    .excel-panel.visible {
+      display: flex;
+    }
+
+    .excel-left {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      padding: 20px;
+    }
+
+    .excel-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      overflow: hidden;
+    }
+
+    .excel-upload {
+      border: 2px dashed #ccc;
+      border-radius: 12px;
+      padding: 32px 20px;
+      text-align: center;
+      color: #999;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+
+    .excel-upload:hover,
+    .excel-upload.dragover {
+      border-color: #667eea;
+      background: #f0f4ff;
+      color: #667eea;
+    }
+
+    .excel-upload .upload-icon {
+      font-size: 36px;
+      margin-bottom: 8px;
+    }
+
+    .excel-upload .upload-hint {
+      font-size: 14px;
+    }
+
+    .excel-upload .upload-formats {
+      font-size: 12px;
+      margin-top: 4px;
+      color: #bbb;
+    }
+
+    .excel-config {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .excel-config-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .excel-config-row label {
+      font-size: 13px;
+      color: #555;
+      min-width: 80px;
+      white-space: nowrap;
+    }
+
+    .excel-config-row select,
+    .excel-config-row input[type="number"] {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+      background: #fafafa;
+      color: #333;
+    }
+
+    .excel-config-row select:focus,
+    .excel-config-row input[type="number"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .excel-group-row {
+      display: none;
+    }
+
+    .excel-group-row.visible {
+      display: flex;
+    }
+
+    .excel-preview {
+      overflow: auto;
+      border: 1px solid #eee;
+      border-radius: 8px;
+    }
+
+    .excel-preview table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .excel-preview th {
+      background: #f5f5f5;
+      padding: 8px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: #333;
+      border-bottom: 2px solid #ddd;
+      white-space: nowrap;
+    }
+
+    .excel-preview td {
+      padding: 6px 12px;
+      border-bottom: 1px solid #eee;
+      color: #555;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .excel-preview tr:hover td {
+      background: #f8f9ff;
+    }
+
+    .excel-output-header {
+      padding: 12px 20px;
+      background: #f5f5f5;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .excel-output-header h2 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .excel-output-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .excel-output-body {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .excel-output-body textarea {
+      flex: 1;
+      width: 100%;
+      padding: 16px;
+      border: none;
+      resize: none;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+
+    .excel-output-body textarea:focus {
+      outline: none;
+    }
+
+    .excel-file-name {
+      font-size: 12px;
+      color: #667eea;
+      margin-top: 4px;
+    }
+
+    .excel-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      margin-bottom: 4px;
+    }
   </style>
 </head>
 <body>
@@ -409,6 +613,7 @@
       <div class="tab-bar">
         <button class="tab-btn active" data-tab="editor">JSON 编辑</button>
         <button class="tab-btn" data-tab="convert">格式转换</button>
+        <button class="tab-btn" data-tab="excel">Excel 转 JSON</button>
       </div>
     </div>
   </div>
@@ -430,9 +635,13 @@
           <select class="template-select" id="formatSelect">
             <option value="auto">自动检测格式</option>
             <option value="general">通用 JSON</option>
-            <option value="chat">OpenAI / 千问 / DeepSeek messages[]</option>
+            <option value="chat">OpenAI messages[]</option>
             <option value="mapping">ChatGPT 导出 mapping</option>
             <option value="gemini">Gemini contents[]</option>
+            <option value="deepseek">DeepSeek 对话树</option>
+            <option value="claude">Claude / Anthropic</option>
+            <option value="qwen">通义千问 Qwen</option>
+            <option value="kimi">Kimi</option>
           </select>
           <button class="btn btn-primary" id="convertBtn">转换</button>
         </div>
@@ -465,6 +674,62 @@
     </div>
   </div>
 
+  <div class="excel-panel" id="excelPanel">
+    <div class="excel-left">
+      <div class="excel-upload" id="excelUpload">
+        <div class="upload-icon">📊</div>
+        <div class="upload-hint">拖拽 Excel 文件到此处，或点击选择</div>
+        <div class="upload-formats">支持 .xlsx, .xls, .csv</div>
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls,.csv" style="display:none">
+      </div>
+      <div class="excel-file-name" id="excelFileName"></div>
+
+      <div class="excel-config" id="excelConfig" style="display:none">
+        <div class="excel-section-title">转换配置</div>
+        <div class="excel-config-row">
+          <label>工作表</label>
+          <select id="excelSheetSelect"><option value="">请先上传文件</option></select>
+        </div>
+        <div class="excel-config-row">
+          <label>表头行号</label>
+          <input type="number" id="excelHeaderRow" value="0" min="0" title="0 表示第一行为表头">
+        </div>
+        <div class="excel-config-row">
+          <label>输出格式</label>
+          <select id="excelOutputFormat">
+            <option value="object">对象数组</option>
+            <option value="array">原始数组</option>
+            <option value="grouped">分组</option>
+          </select>
+        </div>
+        <div class="excel-config-row excel-group-row" id="excelGroupRow">
+          <label>分组列</label>
+          <select id="excelGroupBy"><option value="">请选择列</option></select>
+        </div>
+        <button class="btn btn-primary" id="excelConvertBtn" style="align-self:flex-start">转换</button>
+      </div>
+
+      <div id="excelPreviewWrap" style="display:none">
+        <div class="excel-section-title">数据预览（前5行）</div>
+        <div class="excel-preview" id="excelPreview"></div>
+      </div>
+    </div>
+
+    <div class="excel-right">
+      <div class="excel-output-header">
+        <h2>JSON 输出</h2>
+        <div class="excel-output-actions">
+          <button class="btn btn-secondary" id="excelCopyBtn">复制</button>
+          <button class="btn btn-warning" id="excelDownloadJsonBtn">下载 JSON</button>
+          <button class="btn btn-secondary" id="excelDownloadMdBtn">下载 Markdown</button>
+        </div>
+      </div>
+      <div class="excel-output-body">
+        <textarea id="excelOutput" readonly placeholder="转换结果将显示在此处..."></textarea>
+      </div>
+    </div>
+  </div>
+
   <div class="status-bar">
     <span id="status">就绪</span>
     <span id="conversionTime">0ms</span>
@@ -473,10 +738,80 @@
   <div class="toast" id="toast"></div>
 
   <script>
+    const CODE_LANGUAGE_MAP = [
+      [/\busing\s+System/, 'csharp'],
+      [/\bnamespace\s+\w+/, 'csharp'],
+      [/\bpublic\s+(class|static|void|string|int|bool|float|double)\b/, 'csharp'],
+      [/\bprivate\s+(void|int|string|bool|float)\b/, 'csharp'],
+      [/\bConsole\.(Write|Read)/, 'csharp'],
+      [/^#\s*include\s*[<"]/, 'cpp'],
+      [/\bstd::/, 'cpp'],
+      [/\bcout\s*<</, 'cpp'],
+      [/\bprintf\s*\(/, 'c'],
+      [/\bmalloc\s*\(/, 'c'],
+      [/^import\s+(java|javax)\./, 'java'],
+      [/\bpublic\s+(static\s+)?void\s+main/, 'java'],
+      [/\bSystem\.out\.print/, 'java'],
+      [/\bdef\s+\w+\s*\(.*\)\s*:/, 'python'],
+      [/\bimport\s+\w+\s*$/, 'python'],
+      [/^from\s+\w+\s+import/, 'python'],
+      [/\bprint\s*\(/, 'python'],
+      [/\bself\.\w+/, 'python'],
+      [/^(let|const|var)\s+\w+\s*=/, 'javascript'],
+      [/\bconsole\.log/, 'javascript'],
+      [/\brequire\s*\(/, 'javascript'],
+      [/\bmodule\.exports/, 'javascript'],
+      [/^import\s+.*from\s+['"]/, 'typescript'],
+      [/:\s*(string|number|boolean|void)\s*[={]/, 'typescript'],
+      [/\binterface\s+\w+/, 'typescript'],
+      [/\btype\s+\w+\s*=/, 'typescript'],
+      [/^<!DOCTYPE\s+html/i, 'html'],
+      [/<html[\s>]/i, 'html'],
+      [/<div[\s>]/i, 'html'],
+      [/\bSELECT\s+.*\bFROM\b/i, 'sql'],
+      [/\bINSERT\s+INTO\b/i, 'sql'],
+      [/\bCREATE\s+TABLE\b/i, 'sql'],
+      [/\bUPDATE\s+\w+\s+SET\b/i, 'sql'],
+      [/^[\w.-]+\s*\{[^}]*\}/m, 'css'],
+      [/@media\s*\(/, 'css'],
+      [/\bflex-direction:/, 'css'],
+      [/^#!/, 'bash'],
+      [/\bsudo\s+/, 'bash'],
+      [/\bapt(-get)?\s+install/, 'bash'],
+      [/\bnpm\s+install/, 'bash'],
+      [/\bdocker\s+/, 'bash'],
+      [/^---\s*$/m, 'yaml'],
+      [/^\w+:\s*.+/m, 'yaml'],
+      [/^"[\w.]+"\s*:\s*"/, 'json'],
+    ];
+
     class JsonToMarkdownConverter {
       constructor(options = {}) {
         this.indent = options.indent || 2;
         this.sort = options.sort || false;
+      }
+
+      detectCodeLanguage(code) {
+        const trimmed = code.trim();
+        if (!trimmed) return '';
+        for (const [pattern, lang] of CODE_LANGUAGE_MAP) {
+          if (pattern.test(trimmed)) return lang;
+        }
+        return '';
+      }
+
+      hasMarkdownStructure(text) {
+        const patterns = [
+          /^#{1,6}\s+/m,
+          /^\*{1,3}\s+/m,
+          /^-{1,3}\s+/m,
+          /^>\s+/m,
+          /^\d+\.\s+/m,
+          /\[.*\]\(.*\)/,
+          /^---+$/m,
+          /^\|.+\|/m,
+        ];
+        return patterns.some(p => p.test(text));
       }
 
       convert(jsonString) {
@@ -513,7 +848,10 @@
             });
             return result;
           }
-          return data.map(m => this.normalizeMessage(m));
+          if (data.length > 0 && this.looksLikeMessageArray(data)) {
+            return data.map(m => this.normalizeMessage(m));
+          }
+          throw new Error('无法识别的聊天格式：数组中的元素不包含有效的消息结构');
         }
 
         if (data.mapping) {
@@ -529,21 +867,258 @@
         }
 
         if (data.conversations && Array.isArray(data.conversations)) {
-          const result = [];
-          data.conversations.forEach((conv, i) => {
-            const title = conv.title || conv.name || ('对话 ' + (i + 1));
-            if (data.conversations.length > 1) {
-              result.push({ role: 'system', content: '---\n# ' + title + '\n---' });
-            }
-            const msgs = conv.messages || conv.chats || conv.conversation || [];
-            if (Array.isArray(msgs)) {
-              result.push(...msgs.map(m => this.normalizeMessage(m)));
-            }
-          });
-          return result;
+          return this.normalizeConversations(data);
         }
 
-        return null;
+        if (this.isDeepSeekFormat(data)) {
+          return this.normalizeDeepSeekChat(data);
+        }
+
+        if (this.isClaudeFormat(data)) {
+          return this.normalizeClaudeChat(data);
+        }
+
+        if (this.isQwenFormat(data)) {
+          return this.normalizeQwenChat(data);
+        }
+
+        if (this.isKimiFormat(data)) {
+          return this.normalizeKimiChat(data);
+        }
+
+        throw new Error('无法识别的聊天格式，支持: messages[], contents[], conversations[], mapping, deepseek, claude, qwen, kimi 或消息数组');
+      }
+
+      looksLikeMessageArray(arr) {
+        if (arr.length === 0) return false;
+        return arr.every(item =>
+          item && typeof item === 'object' && typeof item.role === 'string'
+        );
+      }
+
+      normalizeConversations(data) {
+        const result = [];
+        data.conversations.forEach((conv, i) => {
+          const title = conv.title || conv.name || ('对话 ' + (i + 1));
+          if (data.conversations.length > 1) {
+            result.push({ role: 'system', content: '---\n# ' + title + '\n---' });
+          }
+          const msgs = conv.messages || conv.chats || conv.conversation || [];
+          if (Array.isArray(msgs)) {
+            result.push(...msgs.map(m => this.normalizeMessage(m)));
+          }
+        });
+        return result;
+      }
+
+      isClaudeFormat(data) {
+        if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+        if (data.messages && Array.isArray(data.messages)) {
+          const first = data.messages[0];
+          if (first && Array.isArray(first.content) && first.content.some(b =>
+            b.type === 'thinking' || b.type === 'text' || b.type === 'tool_use' || b.type === 'tool_result'
+          )) {
+            return true;
+          }
+        }
+        if (Array.isArray(data) && data.length > 0) {
+          const first = data[0];
+          if (first && Array.isArray(first.content) && first.content.some(b =>
+            b.type === 'thinking' || b.type === 'text' || b.type === 'tool_use' || b.type === 'tool_result'
+          )) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      normalizeClaudeChat(data) {
+        const msgs = data.messages || (Array.isArray(data) ? data : []);
+        return msgs.map(m => this.normalizeMessage(m));
+      }
+
+      isQwenFormat(data) {
+        if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+        if (Array.isArray(data)) {
+          if (data.length > 0 && data[0].chatId) return true;
+        }
+        if (data.chatId || data.chat_id) return true;
+        if (data.chats && Array.isArray(data.chats)) return true;
+        return false;
+      }
+
+      normalizeQwenChat(data) {
+        const result = [];
+        const chats = data.chats || (Array.isArray(data) ? data : [data]);
+
+        chats.forEach((chat, idx) => {
+          const title = chat.title || chat.chatId || ('对话 ' + (idx + 1));
+          if (chats.length > 1) {
+            result.push({ role: 'system', content: '---\n# ' + title + '\n---' });
+          }
+          const msgs = chat.messages || chat.chatItems || [];
+          if (Array.isArray(msgs)) {
+            msgs.forEach(m => {
+              const role = m.role || m.senderType || 'unknown';
+              let content = '';
+              if (typeof m.content === 'string') {
+                content = m.content;
+              } else if (m.content && typeof m.content === 'object') {
+                content = m.content.text || m.content.body || JSON.stringify(m.content, null, 2);
+              }
+              result.push({
+                role: role,
+                content: content,
+                timestamp: this.formatTimestamp(m.createdAt || m.createTime || m.timestamp),
+                model: m.model,
+              });
+            });
+          }
+        });
+
+        return result;
+      }
+
+      isKimiFormat(data) {
+        if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+        if (data.chatRecords && Array.isArray(data.chatRecords)) return true;
+        if (data.item_list && Array.isArray(data.item_list)) return true;
+        return false;
+      }
+
+      normalizeKimiChat(data) {
+        const result = [];
+        const records = data.chatRecords || data.item_list || [];
+
+        if (data.name || data.title) {
+          result.push({ role: 'system', content: '---\n# ' + (data.name || data.title) + '\n---' });
+        }
+
+        records.forEach(item => {
+          const role = item.role === 'user' ? 'user'
+            : item.role === 'assistant' ? 'assistant'
+            : item.role || 'unknown';
+          let content = '';
+          if (typeof item.text === 'string') {
+            content = item.text;
+          } else if (typeof item.content === 'string') {
+            content = item.content;
+          } else if (Array.isArray(item.messages)) {
+            content = item.messages
+              .map(m => m.content || m.text || '')
+              .filter(Boolean)
+              .join('\n\n');
+          }
+          result.push({
+            role: role,
+            content: content,
+            timestamp: this.formatTimestamp(item.created_at || item.createTime),
+            model: item.model,
+          });
+        });
+
+        return result;
+      }
+
+      isDeepSeekFormat(data) {
+        if (typeof data !== 'object' || data === null || Array.isArray(data)) return false;
+        const keys = Object.keys(data);
+        if (keys.length === 0) return false;
+        const sampleKeys = keys.slice(0, 5);
+        let matchCount = 0;
+        sampleKeys.forEach(key => {
+          const node = data[key];
+          if (
+            node
+            && typeof node === 'object'
+            && typeof node.id !== 'undefined'
+            && node.message
+            && typeof node.message === 'object'
+            && Array.isArray(node.message.fragments)
+          ) {
+            matchCount++;
+          }
+        });
+        return matchCount > 0;
+      }
+
+      normalizeDeepSeekChat(data) {
+        const nodeIds = Object.keys(data);
+        const childrenMap = {};
+        const parentMap = {};
+        let rootId = null;
+
+        nodeIds.forEach(id => {
+          const node = data[id];
+          const parent = node.parent || null;
+          parentMap[id] = parent;
+          if (!parent) {
+            rootId = id;
+          } else {
+            if (!childrenMap[parent]) childrenMap[parent] = [];
+            childrenMap[parent].push(id);
+          }
+        });
+
+        if (!rootId && nodeIds.length > 0) {
+          let candidate = nodeIds[0];
+          for (let i = 0; i < nodeIds.length; i++) {
+            const p = parentMap[candidate];
+            if (!p) break;
+            candidate = p;
+          }
+          rootId = candidate;
+        }
+
+        if (!rootId) return [];
+
+        const orderedIds = [];
+        const walk = (id) => {
+          const children = childrenMap[id] || [];
+          children.forEach(childId => {
+            orderedIds.push(childId);
+            walk(childId);
+          });
+        };
+        walk(rootId);
+
+        const messages = [];
+        orderedIds.forEach(id => {
+          const node = data[id];
+          const msg = node.message;
+          if (!msg) return;
+
+          const fragments = [];
+          if (Array.isArray(msg.fragments)) {
+            msg.fragments.forEach(frag => {
+              const role = frag.type === 'REQUEST' ? 'user'
+                : frag.type === 'RESPONSE' ? 'assistant'
+                : frag.type === 'SYSTEM' ? 'system'
+                : 'unknown';
+              fragments.push({
+                role: role,
+                content: frag.content || '',
+                timestamp: this.formatTimestamp(msg.inserted_at),
+              });
+            });
+          }
+
+          if (fragments.length === 0) {
+            const content = typeof msg.content === 'string' ? msg.content : '';
+            if (content) {
+              fragments.push({ role: 'unknown', content: content });
+            }
+          }
+
+          fragments.forEach(frag => {
+            if (msg.model && frag.role === 'assistant') {
+              frag.content = '_模型: ' + msg.model + '_\n\n' + frag.content;
+            }
+            messages.push(frag);
+          });
+        });
+
+        return messages;
       }
 
       buildMessagesFromMapping(mapping, title) {
@@ -611,6 +1186,8 @@
 
         if (typeof msg.content === 'string') {
           content = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          content = this.normalizeContentBlocks(msg.content);
         } else if (msg.content && typeof msg.content === 'object') {
           const parts = msg.content.parts;
           if (Array.isArray(parts)) {
@@ -619,14 +1196,6 @@
             content = msg.content.text;
           } else {
             content = JSON.stringify(msg.content, null, 2);
-          }
-        } else if (Array.isArray(msg.content)) {
-          content = msg.content
-            .filter(p => p.type === 'text')
-            .map(p => p.text || '')
-            .join('\n');
-          if (msg.content.some(p => p.type === 'image_url' || p.type === 'image')) {
-            content += '\n\n_[图片内容]_';
           }
         }
 
@@ -644,7 +1213,8 @@
           name: msg.name,
           timestamp: this.formatTimestamp(timestamp),
           tool_calls: tool_calls,
-          tool_call_id: msg.tool_call_id
+          tool_call_id: msg.tool_call_id,
+          model: msg.model,
         };
       }
 
@@ -687,8 +1257,14 @@
           const ts = msg.timestamp ? (' | ' + msg.timestamp) : '';
           result += '## ' + msgIndex + '. ' + roleLabel + ts + '\n\n';
 
+          if (msg.name) {
+            result += '> **名称**: ' + msg.name + '\n\n';
+          }
+
           if (msg.reasoning_content) {
-            result += '**推理过程:**\n\n' + this.processContent(msg.reasoning_content) + '\n\n';
+            result += '> **推理过程:**\n>\n';
+            const processed = this.processContent(msg.reasoning_content);
+            result += this.wrapBlockquote(processed) + '\n\n';
           }
 
           if (msg.content) {
@@ -698,7 +1274,7 @@
           if (msg.tool_calls && msg.tool_calls.length > 0) {
             result += '**工具调用:**\n\n';
             msg.tool_calls.forEach(tc => {
-              const idStr = tc.id ? (' (ID: `' + tc.id + '`)' : '');
+              const idStr = tc.id ? ' (ID: `' + tc.id + '`)' : '';
               result += '- **' + tc.function.name + '**' + idStr + '\n';
               try {
                 const args = JSON.parse(tc.function.arguments);
@@ -742,6 +1318,10 @@
           .replace(/\\"/g, '"')
           .replace(/\\'/g, "'");
 
+        if (this.hasMarkdownStructure(result)) {
+          return result;
+        }
+
         const hasCodeFence = result.startsWith('```') || result.endsWith('```') || result.includes('\n```') || result.includes('```\n');
         const hasCodeBlock = /```[\s\S]*```/.test(result);
         const hasTable = /\|.+\|/.test(result) && /\|[\s\-:]+\|/m.test(result);
@@ -753,9 +1333,39 @@
         const lines = result.split('\n');
         const hasLongLine = lines.some(line => line.length > 80);
         if (hasLongLine || lines.length > 5) {
-          return '```\n' + result + '\n```';
+          const lang = this.detectCodeLanguage(result);
+          return '```' + lang + '\n' + result + '\n```';
         }
         return result;
+      }
+
+      wrapBlockquote(text) {
+        return text.split('\n').map(line => '> ' + line).join('\n');
+      }
+
+      normalizeContentBlocks(blocks) {
+        const parts = [];
+        blocks.forEach(block => {
+          if (typeof block === 'string') {
+            parts.push(block);
+          } else if (block.type === 'text') {
+            parts.push(block.text || '');
+          } else if (block.type === 'code') {
+            const lang = block.language || '';
+            parts.push('```' + lang + '\n' + (block.code || block.text || '') + '\n```');
+          } else if (block.type === 'image_url' || block.type === 'image') {
+            parts.push('_[图片内容]_');
+          } else if (block.type === 'thinking') {
+            parts.push('> **思考过程**\n> ' + this.wrapBlockquote(block.thinking || block.text || ''));
+          } else if (block.type === 'tool_use') {
+            parts.push('**工具调用**: `' + (block.name || 'unknown') + '`\n```json\n' + JSON.stringify(block.input || {}, null, 2) + '\n```');
+          } else if (block.type === 'tool_result') {
+            parts.push('**工具结果**:\n```\n' + (typeof block.content === 'string' ? block.content : JSON.stringify(block.content, null, 2)) + '\n```');
+          } else if (block.type === 'text_delta') {
+            parts.push(block.text || '');
+          }
+        });
+        return parts.join('\n\n');
       }
 
       convertToMarkdown(value, depth) {
@@ -781,8 +1391,19 @@
       }
 
       convertString(value, depth) {
-        if (this.isJsonString(value) || this.isCodeString(value)) {
+        if (this.isJsonString(value)) {
           return '\n' + ' '.repeat(this.indent * depth) + '```json\n' + value + '\n' + ' '.repeat(this.indent * depth) + '```';
+        }
+        if (this.isCodeString(value)) {
+          const lang = this.detectCodeLanguage(value);
+          return '\n' + ' '.repeat(this.indent * depth) + '```' + lang + '\n' + value + '\n' + ' '.repeat(this.indent * depth) + '```';
+        }
+        if (this.isMarkdownString(value)) {
+          return value;
+        }
+        if (value.includes('\n') && value.split('\n').length > 3) {
+          const lang = this.detectCodeLanguage(value);
+          return '\n' + ' '.repeat(this.indent * depth) + '```' + lang + '\n' + value + '\n' + ' '.repeat(this.indent * depth) + '```';
         }
         return value;
       }
@@ -798,8 +1419,20 @@
 
       isCodeString(value) {
         const trimmed = value.trim();
-        return /^(function|const|let|var|class|import|export)\s/.test(trimmed) ||
-               /^[a-zA-Z_$][\w$]*\s*\(.*\)\s*\{/.test(trimmed);
+        const codePatterns = [
+          /^(function|const|let|var|class|import|export)\s/,
+          /^[a-zA-Z_$][\w$]*\s*\(.*\)\s*\{/,
+          /^#\s*include\s*[<"]/,
+          /\busing\s+System/,
+          /\bnamespace\s+\w+/,
+          /\bdef\s+\w+\s*\(.*\)\s*:/,
+          /\bSELECT\s+.*\bFROM\b/i,
+        ];
+        return codePatterns.some(pattern => pattern.test(trimmed));
+      }
+
+      isMarkdownString(value) {
+        return this.hasMarkdownStructure(value);
       }
 
       convertArray(arr, depth) {
@@ -829,12 +1462,17 @@
         if (!arr.every(item => typeof item === 'object' && item !== null && !Array.isArray(item))) {
           return false;
         }
-        const allKeys = new Set();
-        arr.forEach(item => Object.keys(item).forEach(k => allKeys.add(k)));
-        return arr.every(item => {
-          const itemKeys = Object.keys(item);
-          return allKeys.size === itemKeys.length && [...allKeys].every(key => itemKeys.includes(key));
-        });
+        const keySets = arr.map(item => new Set(Object.keys(item)));
+        if (keySets.length === 0) return false;
+        const commonKeys = new Set([...keySets[0]]);
+        for (let i = 1; i < keySets.length; i++) {
+          for (const key of commonKeys) {
+            if (!keySets[i].has(key)) {
+              commonKeys.delete(key);
+            }
+          }
+        }
+        return commonKeys.size >= 2;
       }
 
       convertToTable(arr) {
@@ -845,15 +1483,37 @@
         const header = '| ' + keys.join(' | ') + ' |';
         const separator = '| ' + keys.map(() => '---').join(' | ') + ' |';
         const rows = arr.map(item => {
-          return '| ' + keys.map(key => {
+          const values = keys.map(key => {
             const value = item[key];
             if (value === null || value === undefined) return '';
-            if (typeof value === 'object') return JSON.stringify(value).substring(0, 50);
+            if (typeof value === 'object') {
+              return this.renderTableCellObject(value);
+            }
             const cleaned = String(value).replace(/\n/g, ' ').replace(/\|/g, '\\|');
-            return cleaned.length > 50 ? cleaned.substring(0, 50) + '...' : cleaned;
-          }).join(' | ') + ' |';
+            if (cleaned.length > 100) {
+              return cleaned.substring(0, 100) + '...';
+            }
+            return cleaned;
+          });
+          return '| ' + values.join(' | ') + ' |';
         });
         return '\n' + header + '\n' + separator + '\n' + rows.join('\n') + '\n';
+      }
+
+      renderTableCellObject(value) {
+        if (Array.isArray(value)) {
+          if (value.length === 0) return '[]';
+          if (value.every(v => typeof v !== 'object')) {
+            return value.join(', ');
+          }
+          return '<details><summary>[' + value.length + '项]</summary>' + JSON.stringify(value, null, 2).replace(/\n/g, '<br>') + '</details>';
+        }
+        const json = JSON.stringify(value, null, 2);
+        const preview = json.substring(0, 80);
+        if (json.length > 80) {
+          return '<details><summary>' + preview.replace(/\n/g, ' ').replace(/\|/g, '\\|') + '...</summary>' + json.replace(/\n/g, '<br>').replace(/\|/g, '\\|') + '</details>';
+        }
+        return preview.replace(/\n/g, ' ').replace(/\|/g, '\\|');
       }
 
       convertObject(obj, depth) {
@@ -978,6 +1638,7 @@
     });
 
     jsonInput.addEventListener('input', () => {
+      localStorage.setItem(STORAGE_KEY, jsonInput.value);
       if (currentView === 'tree') renderJsonTree();
     });
 
@@ -989,16 +1650,26 @@
 
     function switchTab(tab) {
       tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      const excelPanel = document.getElementById('excelPanel');
+      const mainContent = document.querySelector('.main-content');
+
       if (tab === 'editor') {
         inputPanel.className = 'panel panel-input full';
         outputPanel.classList.remove('visible');
         editorTools.style.display = 'flex';
         convertTools.classList.remove('visible');
-      } else {
+        mainContent.style.display = 'flex';
+        excelPanel.classList.remove('visible');
+      } else if (tab === 'convert') {
         inputPanel.className = 'panel panel-input split';
         outputPanel.classList.add('visible');
         editorTools.style.display = 'none';
         convertTools.classList.add('visible');
+        mainContent.style.display = 'flex';
+        excelPanel.classList.remove('visible');
+      } else if (tab === 'excel') {
+        mainContent.style.display = 'none';
+        excelPanel.classList.add('visible');
       }
     }
 
@@ -1017,6 +1688,19 @@
         case 'gemini':
           if (data.contents) return data;
           return { contents: Array.isArray(data) ? data : [{ role: 'user', parts: [{ text: JSON.stringify(data) }] }] };
+        case 'deepseek':
+          return data;
+        case 'claude':
+          if (data.messages && Array.isArray(data.messages)) return data;
+          return { messages: Array.isArray(data) ? data : [data] };
+        case 'qwen':
+          if (data.chats && Array.isArray(data.chats)) return data;
+          if (data.chatId || data.chat_id) return data;
+          return { chats: [data] };
+        case 'kimi':
+          if (data.chatRecords && Array.isArray(data.chatRecords)) return data;
+          if (data.item_list && Array.isArray(data.item_list)) return data;
+          return data;
         default:
           return data;
       }
@@ -1048,11 +1732,11 @@
           status.textContent = '成功';
         } else {
           const data = format === 'auto' ? parsed : forceChatFormat(parsed, format);
-          const chatMessages = converter.detectAndNormalizeChat(data);
-          if (chatMessages) {
+          try {
+            const chatMessages = converter.detectAndNormalizeChat(data);
             result = converter.renderChatToMarkdown(chatMessages);
             status.textContent = '聊天格式 - ' + formatSelect.options[formatSelect.selectedIndex].text;
-          } else {
+          } catch (chatError) {
             result = converter.convert(JSON.stringify(data, null, 2));
             status.textContent = '成功（未检测到聊天格式）';
           }
@@ -1115,6 +1799,13 @@
     saveBtn.addEventListener('click', () => saveJson(false));
     saveAsBtn.addEventListener('click', () => saveJson(true));
 
+    {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        jsonInput.value = saved;
+      }
+    }
+
     convertJson();
 
     document.body.addEventListener('dragover', (e) => {
@@ -1138,6 +1829,7 @@
           const reader = new FileReader();
           reader.onload = (event) => {
             jsonInput.value = event.target.result;
+            if (currentView === 'tree') renderJsonTree();
             showToast('已加载 ' + file.name);
           };
           reader.readAsText(file);
@@ -1182,12 +1874,347 @@
       localStorage.removeItem(STORAGE_KEY);
     });
 
-    {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        jsonInput.value = saved;
+    class ExcelToJsonConverter {
+      convert(buffer, options = {}) {
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheet = this._getSheet(workbook, options);
+        const data = this._parseSheet(sheet, options);
+
+        switch (options.outputFormat) {
+          case 'object':
+            return this._toArrayOfObjects(data);
+          case 'grouped':
+            return this._toGrouped(data, options.groupByKey);
+          case 'array':
+          default:
+            return data;
+        }
+      }
+
+      getSheetInfo(buffer) {
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        return workbook.SheetNames.map((name, index) => {
+          const sheet = workbook.Sheets[name];
+          const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+          const rowCount = range.e.r - range.s.r + 1;
+          const colCount = range.e.c - range.s.c + 1;
+          const headers = this._extractHeaders(sheet, range);
+          const preview = this._extractPreview(sheet, range, 5);
+          return { name, index, rowCount, colCount, headers, preview };
+        });
+      }
+
+      _getSheet(workbook, options) {
+        if (options.sheetName) {
+          const sheet = workbook.Sheets[options.sheetName];
+          if (!sheet) throw new Error('工作表 "' + options.sheetName + '" 不存在');
+          return sheet;
+        }
+        const index = options.sheetIndex ?? 0;
+        const name = workbook.SheetNames[index];
+        if (!name) throw new Error('工作表索引 ' + index + ' 超出范围');
+        return workbook.Sheets[name];
+      }
+
+      _parseSheet(sheet, options) {
+        const range = options.range
+          ? XLSX.utils.decode_range(options.range)
+          : XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+
+        const headerRow = options.headerRow ?? 0;
+        const startRow = range.s.r + headerRow + 1;
+
+        const rows = [];
+        for (let r = startRow; r <= range.e.r; r++) {
+          const row = [];
+          let hasData = false;
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+            const value = cell ? this._parseCellValue(cell) : '';
+            if (value !== '' && value !== null && value !== undefined) hasData = true;
+            row.push(value);
+          }
+          if (hasData || options.includeEmpty) {
+            rows.push(row);
+          }
+        }
+        return rows;
+      }
+
+      _parseCellValue(cell) {
+        switch (cell.t) {
+          case 'n':
+            if (cell.v !== null && Number.isInteger(cell.v) && Math.abs(cell.v) > 30000 && cell.v < 100000) {
+              const date = XLSX.SSF.parse_date_code(cell.v);
+              if (date) {
+                return date.y + '-' + String(date.m).padStart(2, '0') + '-' + String(date.d).padStart(2, '0');
+              }
+            }
+            return cell.v;
+          case 'b':
+            return cell.v;
+          case 'd':
+            return cell.v;
+          default:
+            return cell.v !== null && cell.v !== undefined ? String(cell.v) : '';
+        }
+      }
+
+      _extractHeaders(sheet, range) {
+        const headers = [];
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c })];
+          headers.push(cell ? String(cell.v || '') : '列' + (c + 1));
+        }
+        return headers;
+      }
+
+      _extractPreview(sheet, range, maxRows) {
+        const rows = [];
+        const startRow = range.s.r + 1;
+        const endRow = Math.min(startRow + maxRows - 1, range.e.r);
+        for (let r = startRow; r <= endRow; r++) {
+          const row = [];
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+            row.push(cell ? cell.v : '');
+          }
+          rows.push(row);
+        }
+        return rows;
+      }
+
+      _toArrayOfObjects(data) {
+        if (data.length === 0) return [];
+        const headers = data[0];
+        return data.slice(1).map(row => {
+          const obj = {};
+          headers.forEach((header, i) => {
+            const key = String(header || '列' + (i + 1)).trim();
+            obj[key] = row[i] !== undefined ? row[i] : null;
+          });
+          return obj;
+        });
+      }
+
+      _toGrouped(data, groupByKey) {
+        const objects = this._toArrayOfObjects(data);
+        if (!groupByKey || objects.length === 0) {
+          return { all: objects };
+        }
+        const result = {};
+        objects.forEach(obj => {
+          const key = String(obj[groupByKey] ?? '未分组');
+          if (!result[key]) result[key] = [];
+          const rest = Object.assign({}, obj);
+          delete rest[groupByKey];
+          result[key].push(rest);
+        });
+        return result;
       }
     }
+
+    let excelBuffer = null;
+    let excelSheetInfoList = [];
+    const excelConverter = new ExcelToJsonConverter();
+
+    function handleExcelFile(file) {
+      if (!file) return;
+      const validExts = ['.xlsx', '.xls', '.csv'];
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (!validExts.includes(ext)) {
+        showToast('请上传 .xlsx, .xls 或 .csv 文件！', 'error');
+        return;
+      }
+
+      document.getElementById('excelFileName').textContent = file.name;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        excelBuffer = new Uint8Array(e.target.result);
+        try {
+          excelSheetInfoList = excelConverter.getSheetInfo(excelBuffer);
+          updateExcelSheetSelect(excelSheetInfoList);
+          document.getElementById('excelConfig').style.display = 'flex';
+          onExcelSheetChange();
+          showToast('已加载 ' + file.name);
+        } catch (err) {
+          showToast('解析文件失败：' + err.message, 'error');
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function updateExcelSheetSelect(sheets) {
+      const select = document.getElementById('excelSheetSelect');
+      select.innerHTML = '';
+      sheets.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.index;
+        opt.textContent = s.name + ' (' + s.rowCount + '行 × ' + s.colCount + '列)';
+        select.appendChild(opt);
+      });
+    }
+
+    function onExcelSheetChange() {
+      const idx = parseInt(document.getElementById('excelSheetSelect').value) || 0;
+      const info = excelSheetInfoList[idx];
+      if (!info) return;
+
+      updateExcelPreview(info);
+      updateGroupBySelect(info.headers);
+    }
+
+    function updateExcelPreview(sheetInfo) {
+      const wrap = document.getElementById('excelPreviewWrap');
+      const container = document.getElementById('excelPreview');
+      wrap.style.display = 'block';
+
+      const headers = sheetInfo.headers;
+      const preview = sheetInfo.preview;
+
+      let html = '<table><thead><tr>';
+      headers.forEach(h => { html += '<th>' + escapeHtml(String(h)) + '</th>'; });
+      html += '</tr></thead><tbody>';
+
+      preview.forEach(row => {
+        html += '<tr>';
+        row.forEach(cell => { html += '<td>' + escapeHtml(String(cell ?? '')) + '</td>'; });
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    function updateGroupBySelect(headers) {
+      const select = document.getElementById('excelGroupBy');
+      select.innerHTML = '<option value="">请选择列</option>';
+      headers.forEach(h => {
+        const opt = document.createElement('option');
+        opt.value = h;
+        opt.textContent = h;
+        select.appendChild(opt);
+      });
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function convertExcelToJson() {
+      if (!excelBuffer) {
+        showToast('请先上传 Excel 文件！', 'error');
+        return;
+      }
+
+      const sheetIndex = parseInt(document.getElementById('excelSheetSelect').value) || 0;
+      const headerRow = parseInt(document.getElementById('excelHeaderRow').value) || 0;
+      const outputFormat = document.getElementById('excelOutputFormat').value;
+      const groupByKey = document.getElementById('excelGroupBy').value;
+
+      const options = {
+        sheetIndex: sheetIndex,
+        headerRow: headerRow,
+        outputFormat: outputFormat,
+        groupByKey: outputFormat === 'grouped' ? groupByKey : undefined,
+      };
+
+      try {
+        const result = excelConverter.convert(excelBuffer, options);
+        const json = JSON.stringify(result, null, 2);
+        document.getElementById('excelOutput').value = json;
+        showToast('转换成功！');
+      } catch (err) {
+        showToast('转换失败：' + err.message, 'error');
+      }
+    }
+
+    const excelUpload = document.getElementById('excelUpload');
+    const excelFileInput = document.getElementById('excelFileInput');
+
+    excelUpload.addEventListener('click', () => excelFileInput.click());
+
+    excelUpload.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      excelUpload.classList.add('dragover');
+    });
+
+    excelUpload.addEventListener('dragleave', () => {
+      excelUpload.classList.remove('dragover');
+    });
+
+    excelUpload.addEventListener('drop', (e) => {
+      e.preventDefault();
+      excelUpload.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) handleExcelFile(file);
+    });
+
+    excelFileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) handleExcelFile(file);
+    });
+
+    document.getElementById('excelSheetSelect').addEventListener('change', onExcelSheetChange);
+
+    document.getElementById('excelOutputFormat').addEventListener('change', (e) => {
+      const groupRow = document.getElementById('excelGroupRow');
+      if (e.target.value === 'grouped') {
+        groupRow.classList.add('visible');
+      } else {
+        groupRow.classList.remove('visible');
+      }
+    });
+
+    document.getElementById('excelConvertBtn').addEventListener('click', convertExcelToJson);
+
+    document.getElementById('excelCopyBtn').addEventListener('click', async () => {
+      const text = document.getElementById('excelOutput').value;
+      if (!text) { showToast('没有内容可复制！', 'error'); return; }
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('已复制到剪贴板！');
+      } catch {
+        showToast('复制失败！', 'error');
+      }
+    });
+
+    document.getElementById('excelDownloadJsonBtn').addEventListener('click', () => {
+      const text = document.getElementById('excelOutput').value;
+      if (!text) { showToast('没有内容可下载！', 'error'); return; }
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'output.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('JSON 下载成功！');
+    });
+
+    document.getElementById('excelDownloadMdBtn').addEventListener('click', () => {
+      const text = document.getElementById('excelOutput').value;
+      if (!text) { showToast('没有内容可下载！', 'error'); return; }
+      try {
+        const converter = new JsonToMarkdownConverter({ indent: 2, sort: false });
+        const md = converter.convert(text);
+        const blob = new Blob([md], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'output.md';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast('Markdown 下载成功！');
+      } catch (err) {
+        showToast('Markdown 转换失败：' + err.message, 'error');
+      }
+    });
   </script>
 </body>
 </html>

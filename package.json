@@ -9,7 +9,26 @@
     "build": "tsc",
     "start": "node dist/cli.js",
     "test": "jest",
-    "dev": "ts-node src/cli.ts"
+    "dev": "ts-node src/cli.ts",
+    "build:gui": "tsc && electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.jsonprocessor.app",
+    "productName": "Json处理器",
+    "files": [
+      "dist/**/*",
+      "gui.html",
+      "templates/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": null
+    }
   },
   "keywords": [
     "json",
@@ -21,17 +40,21 @@
   "license": "MIT",
   "description": "将 JSON 转换为结构化 Markdown 格式",
   "devDependencies": {
+    "@types/electron": "^1.4.38",
     "@types/handlebars": "^4.0.40",
     "@types/jest": "^29.5.0",
     "@types/node": "^25.8.0",
     "electron": "^42.1.0",
+    "electron-builder": "^26.8.1",
     "jest": "^29.7.0",
+    "playwright": "^1.60.0",
     "ts-jest": "^29.2.0",
     "ts-node": "^10.9.2",
     "typescript": "~5.7.0"
   },
   "dependencies": {
     "commander": "^14.0.3",
-    "handlebars": "^4.7.9"
+    "handlebars": "^4.7.9",
+    "xlsx": "^0.18.5"
   }
 }
