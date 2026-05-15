@@ -258,9 +258,14 @@ class JsonToMarkdownConverter {
         if (msg.content?.tool_calls) {
             tool_calls = msg.content.tool_calls;
         }
+        let reasoning_content = msg.reasoning_content;
+        if (!reasoning_content && msg.content && typeof msg.content === 'object') {
+            reasoning_content = msg.content.reasoning_content;
+        }
         return {
             role,
             content: content || '',
+            reasoning_content: reasoning_content || undefined,
             name: msg.name,
             timestamp: this.formatTimestamp(timestamp),
             tool_calls,
@@ -314,6 +319,11 @@ class JsonToMarkdownConverter {
             result += `## ${msgIndex}. ${roleLabel}${ts}\n\n`;
             if (msg.name) {
                 result += `> **名称**: ${msg.name}\n\n`;
+            }
+            if (msg.reasoning_content) {
+                result += '**推理过程:**\n\n';
+                const processed = this.processContent(msg.reasoning_content);
+                result += `${processed}\n\n`;
             }
             if (msg.content) {
                 const processed = this.processContent(msg.content);

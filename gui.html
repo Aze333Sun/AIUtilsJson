@@ -244,7 +244,7 @@
       <select class="template-select" id="formatSelect">
         <option value="auto">自动检测格式</option>
         <option value="general">通用 JSON</option>
-        <option value="chat">聊天记录 messages[]</option>
+        <option value="chat">OpenAI / 千问 / DeepSeek messages[]</option>
         <option value="mapping">ChatGPT 导出 mapping</option>
         <option value="gemini">Gemini contents[]</option>
       </select>
@@ -449,9 +449,14 @@
 
         const timestamp = msg.timestamp || msg.created_at || msg.created || msg.time || msg.create_time;
         const tool_calls = msg.tool_calls || (msg.content && msg.content.tool_calls);
+        let reasoning_content = msg.reasoning_content;
+        if (!reasoning_content && msg.content && typeof msg.content === 'object') {
+          reasoning_content = msg.content.reasoning_content;
+        }
 
         return {
           role: role,
+          reasoning_content: reasoning_content || undefined,
           content: content || '',
           name: msg.name,
           timestamp: this.formatTimestamp(timestamp),
@@ -498,6 +503,10 @@
           const roleLabel = this.getRoleLabel(msg.role);
           const ts = msg.timestamp ? (' | ' + msg.timestamp) : '';
           result += '## ' + msgIndex + '. ' + roleLabel + ts + '\n\n';
+
+          if (msg.reasoning_content) {
+            result += '**推理过程:**\n\n' + this.processContent(msg.reasoning_content) + '\n\n';
+          }
 
           if (msg.content) {
             result += this.processContent(msg.content) + '\n\n';
