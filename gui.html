@@ -241,9 +241,12 @@
   <div class="header">
     <h1>JSON 转 Markdown 转换器</h1>
     <div class="toolbar">
-      <select class="template-select" id="templateSelect">
-        <option value="">默认模板</option>
-        <option value="custom">自定义模板</option>
+      <select class="template-select" id="formatSelect">
+        <option value="auto">自动检测格式</option>
+        <option value="general">通用 JSON</option>
+        <option value="chat">聊天记录 messages[]</option>
+        <option value="mapping">ChatGPT 导出 mapping</option>
+        <option value="gemini">Gemini contents[]</option>
       </select>
       <button class="btn btn-secondary" id="copyBtn">复制</button>
       <button class="btn btn-warning" id="exportBtn">导出</button>
@@ -692,6 +695,7 @@
     const exportBtn = document.getElementById('exportBtn');
     const clearBtn = document.getElementById('clearBtn');
     const sortCheck = document.getElementById('sortCheck');
+    const formatSelect = document.getElementById('formatSelect');
     const status = document.getElementById('status');
     const charCount = document.getElementById('charCount');
     const conversionTime = document.getElementById('conversionTime');
@@ -702,6 +706,22 @@
       toast.textContent = message;
       toast.className = 'toast ' + type + ' show';
       setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    function forceChatFormat(data, format) {
+      switch (format) {
+        case 'chat':
+          if (data.messages && Array.isArray(data.messages)) return data;
+          return { messages: Array.isArray(data) ? data : [data] };
+        case 'mapping':
+          if (data.mapping) return data;
+          return { title: '对话', mapping: data.mapping || {} };
+        case 'gemini':
+          if (data.contents) return data;
+          return { contents: Array.isArray(data) ? data : [{ role: 'user', parts: [{ text: JSON.stringify(data) }] }] };
+        default:
+          return data;
+      }
     }
 
     function convertJson() {
@@ -721,32 +741,31 @@
 
       try {
         const converter = new JsonToMarkdownConverter({ indent: 2, sort: sortCheck.checked });
+        const format = formatSelect.value;
+        const parsed = JSON.parse(jsonText);
         let result;
 
-        const parsed = JSON.parse(jsonText);
-        const chatMessages = converter.detectAndNormalizeChat(parsed);
-
-        if (chatMessages) {
-          result = converter.renderChatToMarkdown(chatMessages);
-          status.textContent = '聊天格式已识别';
-        } else {
+        if (format === 'general') {
           result = converter.convert(jsonText);
           status.textContent = '成功';
+        } else {
+          const data = format === 'auto' ? parsed : forceChatFormat(parsed, format);
+          const chatMessages = converter.detectAndNormalizeChat(data);
+          if (chatMessages) {
+            result = converter.renderChatToMarkdown(chatMessages);
+            status.textContent = '聊天格式 - ' + formatSelect.options[formatSelect.selectedIndex].text;
+          } else {
+            result = converter.convert(JSON.stringify(data, null, 2));
+            status.textContent = '成功（未检测到聊天格式）';
+          }
         }
 
         outputArea.textContent = result;
         charCount.textContent = result.length + ' 字符';
       } catch (error) {
-        try {
-          const converter = new JsonToMarkdownConverter({ indent: 2, sort: sortCheck.checked });
-          const result = converter.convert(jsonText);
-          outputArea.textContent = result;
-          status.textContent = '成功';
-        } catch (fallbackError) {
-          outputArea.textContent = '错误: ' + error.message;
-          status.textContent = '错误';
-          showToast('转换失败！', 'error');
-        }
+        outputArea.textContent = '错误: ' + error.message;
+        status.textContent = '错误';
+        showToast('转换失败！', 'error');
       }
 
       conversionTime.textContent = (Date.now() - startTime) + 'ms';
@@ -754,6 +773,7 @@
 
     jsonInput.addEventListener('input', convertJson);
     sortCheck.addEventListener('change', convertJson);
+    formatSelect.addEventListener('change', convertJson);
 
     document.body.addEventListener('dragover', (e) => {
       e.preventDefault();
