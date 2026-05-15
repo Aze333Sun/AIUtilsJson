@@ -755,16 +755,18 @@
     jsonInput.addEventListener('input', convertJson);
     sortCheck.addEventListener('change', convertJson);
 
-    dropZone.addEventListener('dragover', (e) => {
+    document.body.addEventListener('dragover', (e) => {
       e.preventDefault();
       dropZone.classList.add('dragover');
     });
 
-    dropZone.addEventListener('dragleave', () => {
-      dropZone.classList.remove('dragover');
+    document.body.addEventListener('dragleave', (e) => {
+      if (!e.relatedTarget || !document.body.contains(e.relatedTarget)) {
+        dropZone.classList.remove('dragover');
+      }
     });
 
-    dropZone.addEventListener('drop', (e) => {
+    document.body.addEventListener('drop', (e) => {
       e.preventDefault();
       dropZone.classList.remove('dragover');
       const file = e.dataTransfer.files[0];
