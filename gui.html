@@ -235,30 +235,102 @@
     .checkbox-group input[type="checkbox"] {
       cursor: pointer;
     }
+
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+    }
+
+    .tab-btn {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 8px 8px 0 0;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      background: rgba(255,255,255,0.15);
+      color: rgba(255,255,255,0.7);
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      background: rgba(255,255,255,0.25);
+      color: white;
+    }
+
+    .tab-btn.active {
+      background: white;
+      color: #333;
+    }
+
+    .panel-output {
+      display: none;
+    }
+
+    .panel-output.visible {
+      display: flex;
+    }
+
+    .panel-input.full {
+      flex: 1;
+    }
+
+    .panel-input.split {
+      flex: 1;
+    }
+
+    .panel-output.split {
+      flex: 1;
+      display: flex;
+    }
+
+    .editor-tools {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .convert-tools {
+      display: none;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .convert-tools.visible {
+      display: flex;
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <h1>JSON 转 Markdown 转换器</h1>
     <div class="toolbar">
-      <select class="template-select" id="formatSelect">
-        <option value="auto">自动检测格式</option>
-        <option value="general">通用 JSON</option>
-        <option value="chat">OpenAI / 千问 / DeepSeek messages[]</option>
-        <option value="mapping">ChatGPT 导出 mapping</option>
-        <option value="gemini">Gemini contents[]</option>
-      </select>
-      <button class="btn btn-secondary" id="copyBtn">复制</button>
-      <button class="btn btn-warning" id="exportBtn">导出</button>
-      <button class="btn btn-secondary" id="clearBtn">清空</button>
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="editor">JSON 编辑</button>
+        <button class="tab-btn" data-tab="convert">格式转换</button>
+      </div>
     </div>
   </div>
 
   <div class="main-content">
-    <div class="panel">
+    <div class="panel panel-input full" id="inputPanel">
       <div class="panel-header">
         <h2>JSON 输入</h2>
-        <span style="font-size: 12px; color: #999;">拖拽 JSON 文件到此处或粘贴 JSON</span>
+        <div class="editor-tools" id="editorTools">
+          <span style="font-size: 12px; color: #999;">拖拽 JSON 文件到此处</span>
+          <button class="btn btn-secondary" id="saveBtn">保存</button>
+          <button class="btn btn-secondary" id="saveAsBtn">另存为...</button>
+        </div>
+        <div class="convert-tools" id="convertTools">
+          <select class="template-select" id="formatSelect">
+            <option value="auto">自动检测格式</option>
+            <option value="general">通用 JSON</option>
+            <option value="chat">OpenAI / 千问 / DeepSeek messages[]</option>
+            <option value="mapping">ChatGPT 导出 mapping</option>
+            <option value="gemini">Gemini contents[]</option>
+          </select>
+          <button class="btn btn-primary" id="convertBtn">转换</button>
+        </div>
       </div>
       <div class="panel-body">
         <div class="drop-zone" id="dropZone">
@@ -268,12 +340,17 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel panel-output" id="outputPanel">
       <div class="panel-header">
         <h2>Markdown 输出</h2>
         <div class="checkbox-group">
           <label><input type="checkbox" id="sortCheck"> 排序键名</label>
           <span id="charCount" style="font-size: 12px; color: #999;">0 字符</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-left:12px;">
+          <button class="btn btn-secondary" id="copyBtn">复制</button>
+          <button class="btn btn-warning" id="exportBtn">导出</button>
+          <button class="btn btn-secondary" id="clearBtn">清空</button>
         </div>
       </div>
       <div class="panel-body">
@@ -699,23 +776,51 @@
 
     const jsonInput = document.getElementById('jsonInput');
     const outputArea = document.getElementById('outputArea');
+    const inputPanel = document.getElementById('inputPanel');
+    const outputPanel = document.getElementById('outputPanel');
     const dropZone = document.getElementById('dropZone');
     const copyBtn = document.getElementById('copyBtn');
     const exportBtn = document.getElementById('exportBtn');
     const clearBtn = document.getElementById('clearBtn');
+    const convertBtn = document.getElementById('convertBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const saveAsBtn = document.getElementById('saveAsBtn');
     const sortCheck = document.getElementById('sortCheck');
     const formatSelect = document.getElementById('formatSelect');
+    const editorTools = document.getElementById('editorTools');
+    const convertTools = document.getElementById('convertTools');
     const status = document.getElementById('status');
     const charCount = document.getElementById('charCount');
     const conversionTime = document.getElementById('conversionTime');
     const toast = document.getElementById('toast');
+    const tabBtns = document.querySelectorAll('.tab-btn');
     const STORAGE_KEY = 'json2md_input';
+    let currentFileName = 'data.json';
 
     function showToast(message, type = 'success') {
       toast.textContent = message;
       toast.className = 'toast ' + type + ' show';
       setTimeout(() => toast.classList.remove('show'), 3000);
     }
+
+    function switchTab(tab) {
+      tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      if (tab === 'editor') {
+        inputPanel.className = 'panel panel-input full';
+        outputPanel.classList.remove('visible');
+        editorTools.style.display = 'flex';
+        convertTools.classList.remove('visible');
+      } else {
+        inputPanel.className = 'panel panel-input split';
+        outputPanel.classList.add('visible');
+        editorTools.style.display = 'none';
+        convertTools.classList.add('visible');
+      }
+    }
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
 
     function forceChatFormat(data, format) {
       switch (format) {
@@ -780,9 +885,53 @@
       conversionTime.textContent = (Date.now() - startTime) + 'ms';
     }
 
-    jsonInput.addEventListener('input', convertJson);
-    sortCheck.addEventListener('change', convertJson);
-    formatSelect.addEventListener('change', convertJson);
+    convertBtn.addEventListener('click', convertJson);
+
+    async function saveJson(saveAs = false) {
+      const text = jsonInput.value.trim();
+      if (!text) { showToast('没有内容可保存！', 'error'); return; }
+
+      try {
+        JSON.parse(text);
+      } catch {
+        showToast('JSON 格式无效，无法保存！', 'error');
+        return;
+      }
+
+      const blob = new Blob([text], { type: 'application/json' });
+
+      if (!saveAs && window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: currentFileName,
+            types: [{ description: 'JSON 文件', accept: { 'application/json': ['.json'] } }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          currentFileName = handle.name;
+          showToast('已保存 ' + currentFileName);
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = saveAs ? 'data.json' : currentFileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('已保存 ' + a.download);
+    }
+
+    saveBtn.addEventListener('click', () => saveJson(false));
+    saveAsBtn.addEventListener('click', () => saveJson(true));
+
+    convertJson();
 
     document.body.addEventListener('dragover', (e) => {
       e.preventDefault();
@@ -801,10 +950,10 @@
       const file = e.dataTransfer.files[0];
       if (file) {
         if (file.name.endsWith('.json')) {
+          currentFileName = file.name;
           const reader = new FileReader();
           reader.onload = (event) => {
             jsonInput.value = event.target.result;
-            convertJson();
             showToast('已加载 ' + file.name);
           };
           reader.readAsText(file);
@@ -847,21 +996,14 @@
       conversionTime.textContent = '0ms';
       status.textContent = '就绪';
       localStorage.removeItem(STORAGE_KEY);
-      showToast('已清空！');
     });
 
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      jsonInput.value = saved;
-    } else {
-      jsonInput.value = JSON.stringify({
-        "messages": [
-          { "role": "user", "content": "你好" },
-          { "role": "assistant", "content": "你好！有什么可以帮助你的？" }
-        ]
-      }, null, 2);
+    {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        jsonInput.value = saved;
+      }
     }
-    convertJson();
   </script>
 </body>
 </html>
