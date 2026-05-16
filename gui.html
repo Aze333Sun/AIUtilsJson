@@ -604,6 +604,16 @@
       color: #444;
       margin-bottom: 4px;
     }
+
+    .extract-options {
+      display: none;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .extract-options.visible {
+      display: flex;
+    }
   </style>
 </head>
 <body>
@@ -642,7 +652,13 @@
             <option value="claude">Claude / Anthropic</option>
             <option value="qwen">通义千问 Qwen</option>
             <option value="kimi">Kimi</option>
+            <option value="extract">对话记录提取</option>
           </select>
+          <div class="extract-options" id="extractOptions">
+            <label style="font-size:12px;white-space:nowrap;"><input type="checkbox" id="extractCode" checked> 代码</label>
+            <label style="font-size:12px;white-space:nowrap;"><input type="checkbox" id="extractTools" checked> 工具</label>
+            <label style="font-size:12px;white-space:nowrap;"><input type="checkbox" id="extractReasoning"> 推理</label>
+          </div>
           <button class="btn btn-primary" id="convertBtn">转换</button>
         </div>
       </div>
@@ -1730,6 +1746,16 @@
         if (format === 'general') {
           result = converter.convert(jsonText);
           status.textContent = '成功';
+        } else if (format === 'extract') {
+          const extractor = new ChatRecordExtractor({
+            includeCode: document.getElementById('extractCode').checked,
+            includeToolCalls: document.getElementById('extractTools').checked,
+            includeReasoning: document.getElementById('extractReasoning').checked,
+            includeTimestamps: true,
+            includeModelInfo: true,
+          });
+          result = extractor.extract(jsonText);
+          status.textContent = '对话记录提取';
         } else {
           const data = format === 'auto' ? parsed : forceChatFormat(parsed, format);
           try {
@@ -1754,6 +1780,15 @@
     }
 
     convertBtn.addEventListener('click', convertJson);
+
+    formatSelect.addEventListener('change', () => {
+      const extractOpts = document.getElementById('extractOptions');
+      if (formatSelect.value === 'extract') {
+        extractOpts.classList.add('visible');
+      } else {
+        extractOpts.classList.remove('visible');
+      }
+    });
 
     async function saveJson(saveAs = false) {
       const text = jsonInput.value.trim();
@@ -2014,6 +2049,302 @@
       }
     }
 
+    class ChatRecordExtractor {
+      constructor(options = {}) {
+        this.converter = new JsonToMarkdownConverter();
+        this.options = Object.assign({
+          includeCode: true,
+          includeToolCalls: true,
+          includeReasoning: false,
+          includeTimestamps: true,
+          includeModelInfo: true,
+          maxContentLength: 500,
+        }, options);
+      }
+
+      extract(jsonString) {
+        const data = JSON.parse(jsonString);
+        const messages = this.converter.detectAndNormalizeChat(data);
+        const conversations = this.splitConversations(messages);
+        const extracted = conversations.map(conv => this.extractConversation(conv));
+        return this.renderExtractedDocument(extracted);
+      }
+
+      splitConversations(messages) {
+        const conversations = [];
+        let current = [];
+
+        messages.forEach(msg => {
+          if (msg.role === 'system' && msg.content.startsWith('---\n# ')) {
+            if (current.length > 0) conversations.push(current);
+            current = [msg];
+            return;
+          }
+          current.push(msg);
+        });
+
+        if (current.length > 0) conversations.push(current);
+        if (conversations.length === 0 && messages.length > 0) conversations.push(messages);
+        return conversations;
+      }
+
+      extractConversation(messages) {
+        const userMsgs = messages.filter(m => m.role === 'user');
+        const assistantMsgs = messages.filter(m => m.role === 'assistant');
+        const timestamps = messages.map(m => m.timestamp).filter(Boolean);
+        const models = [...new Set(assistantMsgs.map(m => m.model).filter(Boolean))];
+
+        const title = this.inferTitle(messages);
+        const topics = this.extractTopics(userMsgs);
+        const keyQA = this.extractKeyQA(messages);
+        const codeSnippets = this.extractCodeSnippets(messages);
+        const toolCalls = this.extractToolCalls(messages);
+        const summary = this.generateSummary(messages, topics, keyQA);
+
+        return {
+          title,
+          startTime: timestamps[0],
+          endTime: timestamps[timestamps.length - 1],
+          model: models.join(', ') || undefined,
+          messageCount: messages.length,
+          userMessages: userMsgs.length,
+          assistantMessages: assistantMsgs.length,
+          topics,
+          keyQA,
+          codeSnippets,
+          toolCalls,
+          summary,
+        };
+      }
+
+      inferTitle(messages) {
+        const titleMsg = messages.find(m => m.role === 'system' && m.content.startsWith('---\n# '));
+        if (titleMsg) {
+          const match = titleMsg.content.match(/---\n# (.+)\n---/);
+          if (match) return match[1];
+        }
+        const firstUserMsg = messages.find(m => m.role === 'user');
+        if (firstUserMsg) {
+          const firstLine = firstUserMsg.content.trim().split('\n')[0].trim();
+          return firstLine.length <= 80 ? firstLine : firstLine.substring(0, 77) + '...';
+        }
+        const firstMsg = messages.find(m => m.role !== 'system');
+        if (firstMsg) {
+          const firstLine = firstMsg.content.trim().split('\n')[0].trim();
+          return firstLine.length <= 80 ? firstLine : firstLine.substring(0, 77) + '...';
+        }
+        return '未命名对话';
+      }
+
+      extractTopics(userMsgs) {
+        const topics = [];
+        const seen = new Set();
+        userMsgs.forEach(msg => {
+          const sentences = msg.content.trim().split(/[。？！\n.?!]+/).filter(s => s.trim().length > 2);
+          sentences.forEach(s => {
+            const trimmed = s.trim();
+            if (trimmed.length >= 4 && trimmed.length <= 50 && !seen.has(trimmed)) {
+              seen.add(trimmed);
+              topics.push(trimmed);
+            }
+          });
+        });
+        return topics.slice(0, 10);
+      }
+
+      extractKeyQA(messages) {
+        const qaPairs = [];
+        const maxLen = this.options.maxContentLength || 500;
+        for (let i = 0; i < messages.length; i++) {
+          if (messages[i].role === 'user') {
+            const question = this.truncateContent(messages[i].content, maxLen);
+            let answer = '';
+            for (let j = i + 1; j < messages.length && j < i + 3; j++) {
+              if (messages[j].role === 'assistant') {
+                answer = this.truncateContent(messages[j].content, maxLen);
+                break;
+              }
+            }
+            if (answer) qaPairs.push({ question, answer });
+          }
+        }
+        return qaPairs;
+      }
+
+      extractCodeSnippets(messages) {
+        if (!this.options.includeCode) return [];
+        const snippets = [];
+        const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+        messages.forEach(msg => {
+          if (msg.role !== 'assistant') return;
+          const content = msg.content;
+          let match;
+          codeBlockRegex.lastIndex = 0;
+          while ((match = codeBlockRegex.exec(content)) !== null) {
+            const language = match[1] || '未知';
+            const code = match[2].trim();
+            if (code.length > 10) {
+              const beforeIndex = match.index;
+              const contextText = content.substring(Math.max(0, beforeIndex - 100), beforeIndex).trim();
+              const contextLine = contextText.split('\n').pop() || '';
+              snippets.push({
+                language,
+                code: code.length > 800 ? code.substring(0, 797) + '...' : code,
+                context: contextLine.substring(0, 80),
+              });
+            }
+          }
+        });
+        return snippets.slice(0, 20);
+      }
+
+      extractToolCalls(messages) {
+        if (!this.options.includeToolCalls) return [];
+        const calls = [];
+        messages.forEach(msg => {
+          if (msg.tool_calls) {
+            msg.tool_calls.forEach(tc => {
+              calls.push({ name: tc.function.name, arguments: tc.function.arguments });
+            });
+          }
+        });
+        return calls.slice(0, 20);
+      }
+
+      generateSummary(messages, topics, keyQA) {
+        const userMsgs = messages.filter(m => m.role === 'user');
+        const assistantMsgs = messages.filter(m => m.role === 'assistant');
+        const parts = [];
+        if (topics.length > 0) parts.push('涉及主题: ' + topics.slice(0, 5).join('、'));
+        parts.push('共 ' + userMsgs.length + ' 个问题，' + assistantMsgs.length + ' 个回答');
+        if (keyQA.length > 0) {
+          const firstQ = keyQA[0].question.split('\n')[0];
+          parts.push('首个问题: ' + firstQ.substring(0, 60));
+        }
+        return parts.join('；');
+      }
+
+      truncateContent(content, maxLen) {
+        const cleaned = content
+          .replace(/```[\s\S]*?```/g, '[代码块]')
+          .replace(/!\[.*?\]\(.*?\)/g, '[图片]')
+          .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+          .trim();
+        return cleaned.length <= maxLen ? cleaned : cleaned.substring(0, maxLen - 3) + '...';
+      }
+
+      renderExtractedDocument(conversations) {
+        const lines = [];
+        const now = new Date();
+        const dateStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+
+        lines.push('# 对话记录提取报告');
+        lines.push('');
+        lines.push('> 生成时间: ' + dateStr + ' | 对话数: ' + conversations.length);
+        lines.push('');
+
+        const totalMessages = conversations.reduce((s, c) => s + c.messageCount, 0);
+        const totalUser = conversations.reduce((s, c) => s + c.userMessages, 0);
+        const totalAssistant = conversations.reduce((s, c) => s + c.assistantMessages, 0);
+
+        lines.push('## 概览');
+        lines.push('');
+        lines.push('| 指标 | 值 |');
+        lines.push('| --- | --- |');
+        lines.push('| 对话总数 | ' + conversations.length + ' |');
+        lines.push('| 消息总数 | ' + totalMessages + ' |');
+        lines.push('| 用户消息 | ' + totalUser + ' |');
+        lines.push('| 助手消息 | ' + totalAssistant + ' |');
+
+        const allModels = [...new Set(conversations.map(c => c.model).filter(Boolean))];
+        if (allModels.length > 0) lines.push('| 使用模型 | ' + allModels.join(', ') + ' |');
+
+        if (conversations.length > 0 && conversations[0].startTime) {
+          const firstTime = conversations[0].startTime;
+          const lastConv = conversations[conversations.length - 1];
+          const lastTime = lastConv.endTime || lastConv.startTime;
+          if (lastTime) lines.push('| 时间范围 | ' + firstTime + ' ~ ' + lastTime + ' |');
+        }
+        lines.push('');
+
+        if (conversations.length > 1) {
+          lines.push('## 对话目录');
+          lines.push('');
+          conversations.forEach((conv, i) => {
+            lines.push((i + 1) + '. **' + conv.title + '** - ' + conv.summary.substring(0, 80));
+          });
+          lines.push('');
+        }
+
+        conversations.forEach((conv, i) => {
+          const prefix = conversations.length > 1 ? '## ' + (i + 1) + '. ' : '## ';
+          lines.push(prefix + conv.title);
+          lines.push('');
+
+          if (this.options.includeTimestamps && conv.startTime) {
+            const timeRange = conv.endTime && conv.endTime !== conv.startTime
+              ? conv.startTime + ' ~ ' + conv.endTime
+              : conv.startTime;
+            lines.push('> 时间: ' + timeRange);
+            if (this.options.includeModelInfo && conv.model) {
+              lines.push('> 模型: ' + conv.model);
+            }
+            lines.push('');
+          } else if (this.options.includeModelInfo && conv.model) {
+            lines.push('> 模型: ' + conv.model);
+            lines.push('');
+          }
+
+          lines.push('**摘要**: ' + conv.summary);
+          lines.push('');
+
+          if (conv.topics.length > 0) {
+            lines.push('**主题**: ' + conv.topics.map(t => '`' + t + '`').join(' '));
+            lines.push('');
+          }
+
+          if (conv.keyQA.length > 0) {
+            lines.push('### 关键问答');
+            lines.push('');
+            conv.keyQA.forEach((qa, qi) => {
+              lines.push('**Q' + (qi + 1) + '**: ' + qa.question);
+              lines.push('');
+              lines.push('**A' + (qi + 1) + '**: ' + qa.answer);
+              lines.push('');
+            });
+          }
+
+          if (conv.codeSnippets.length > 0) {
+            lines.push('### 代码片段');
+            lines.push('');
+            conv.codeSnippets.forEach((snippet, si) => {
+              lines.push('**片段 ' + (si + 1) + '** (' + snippet.language + ')' + (snippet.context ? ' - ' + snippet.context : ''));
+              lines.push('');
+              lines.push('```' + snippet.language);
+              lines.push(snippet.code);
+              lines.push('```');
+              lines.push('');
+            });
+          }
+
+          if (conv.toolCalls.length > 0) {
+            lines.push('### 工具调用');
+            lines.push('');
+            conv.toolCalls.forEach((tc, ti) => {
+              lines.push((ti + 1) + '. `' + tc.name + '`');
+              lines.push('   - 参数: `' + tc.arguments.substring(0, 100) + '`');
+            });
+            lines.push('');
+          }
+
+          lines.push('---');
+          lines.push('');
+        });
+
+        return lines.join('\n').trimEnd();
+      }
+    }
+
     let excelBuffer = null;
     let excelSheetInfoList = [];
     const excelConverter = new ExcelToJsonConverter();
@@ -2031,18 +2362,23 @@
 
       const reader = new FileReader();
       reader.onload = function(e) {
-        excelBuffer = new Uint8Array(e.target.result);
-        try {
-          excelSheetInfoList = excelConverter.getSheetInfo(excelBuffer);
-          updateExcelSheetSelect(excelSheetInfoList);
-          document.getElementById('excelConfig').style.display = 'flex';
-          onExcelSheetChange();
-          showToast('已加载 ' + file.name);
-        } catch (err) {
-          showToast('解析文件失败：' + err.message, 'error');
-        }
+        loadExcelBuffer(e.target.result, file.name);
       };
       reader.readAsArrayBuffer(file);
+    }
+
+    function loadExcelBuffer(buffer, fileName) {
+      excelBuffer = new Uint8Array(buffer);
+      try {
+        excelSheetInfoList = excelConverter.getSheetInfo(excelBuffer);
+        updateExcelSheetSelect(excelSheetInfoList);
+        document.getElementById('excelConfig').style.display = 'flex';
+        document.getElementById('excelFileName').textContent = fileName || '';
+        onExcelSheetChange();
+        showToast('已加载 ' + (fileName || '文件'));
+      } catch (err) {
+        showToast('解析文件失败：' + err.message, 'error');
+      }
     }
 
     function updateExcelSheetSelect(sheets) {
@@ -2215,6 +2551,38 @@
         showToast('Markdown 转换失败：' + err.message, 'error');
       }
     });
+
+    if (window.electronAPI) {
+      window.electronAPI.onFileOpened((data) => {
+        jsonInput.value = data.content;
+        currentFileName = data.fileName;
+        if (currentView === 'tree') renderJsonTree();
+        convertJson();
+        showToast('已加载 ' + data.fileName);
+      });
+
+      window.electronAPI.onExcelOpened((data) => {
+        const raw = atob(data.buffer);
+        const arr = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+        const buffer = arr.buffer;
+        switchTab('excel');
+        loadExcelBuffer(buffer, data.fileName);
+      });
+
+      window.electronAPI.onRequestMarkdownContent(({ saveAs }) => {
+        const content = outputArea.textContent || '';
+        window.electronAPI.sendMarkdownContent(content, saveAs);
+      });
+
+      window.electronAPI.onSaveComplete((data) => {
+        if (data.success) {
+          showToast('已保存到 ' + data.filePath);
+        } else {
+          showToast('保存失败：' + data.error, 'error');
+        }
+      });
+    }
   </script>
 </body>
 </html>

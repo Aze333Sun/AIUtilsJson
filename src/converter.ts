@@ -11,7 +11,7 @@ export interface ChatConverterOptions {
   includeTimestamp?: boolean;
 }
 
-interface NormalizedMessage {
+export interface NormalizedMessage {
   role: string;
   content: string;
   reasoning_content?: string;
@@ -181,6 +181,21 @@ export class JsonToMarkdownConverter {
 
     const messages = this.detectAndNormalizeChat(data);
     return this.renderChatToMarkdown(messages, options);
+  }
+
+  detectAndNormalizeChatPublic(jsonString: string): NormalizedMessage[] {
+    let data: any;
+    try {
+      data = JSON.parse(jsonString);
+    } catch (error) {
+      try {
+        const sanitized = this.sanitizeJson(jsonString);
+        data = JSON.parse(sanitized);
+      } catch (sanitizeError) {
+        throw new Error(`无效的JSON: ${(sanitizeError as Error).message}`);
+      }
+    }
+    return this.detectAndNormalizeChat(data);
   }
 
   private detectAndNormalizeChat(data: any): NormalizedMessage[] {

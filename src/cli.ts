@@ -4,6 +4,7 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import { convert, convertChat } from './converter';
 import { convertExcelToJson, getExcelSheetInfo } from './excel-converter';
+import { extractChatRecords } from './chat-extractor';
 
 const program = new Command();
 
@@ -27,7 +28,11 @@ program
   .option('--header-row <number>', '表头行号（从0开始）', (v) => parseInt(v, 10), 0)
   .option('--excel-format <format>', 'JSON 输出格式: array | object | grouped', 'object')
   .option('--group-by <column>', '按指定列分组（需配合 --excel-format grouped）')
-  .option('--list-sheets', '列出 Excel 文件中的所有工作表信息');
+  .option('--list-sheets', '列出 Excel 文件中的所有工作表信息')
+  .option('--extract', '从聊天记录中提取关键信息生成摘要文档')
+  .option('--no-code', '提取时排除代码片段')
+  .option('--no-tools', '提取时排除工具调用')
+  .option('--with-reasoning', '提取时包含推理过程');
 
 program.parse(process.argv);
 
@@ -64,7 +69,13 @@ async function main() {
 
     let result: string;
 
-    if (options.chat) {
+    if (options.extract) {
+      result = extractChatRecords(jsonContent, {
+        includeCode: !options.noCode,
+        includeToolCalls: !options.noTools,
+        includeReasoning: !!options.withReasoning,
+      });
+    } else if (options.chat) {
       result = convertChat(jsonContent, {
         includeTimestamp: true,
       });

@@ -1,16 +1,19 @@
 {
   "name": "json2md",
   "version": "1.0.0",
-  "main": "dist/index.js",
+  "main": "dist/gui.js",
   "bin": {
     "json2md": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/cli.js",
+    "start:gui": "electron .",
     "test": "jest",
     "dev": "ts-node src/cli.ts",
-    "build:gui": "tsc && electron-builder --win portable"
+    "build:gui": "tsc && electron-builder --win portable --publish never",
+    "build:gui:nsis": "tsc && electron-builder --win nsis --publish never",
+    "build:gui:all": "tsc && electron-builder --win --publish never"
   },
   "build": {
     "appId": "com.jsonprocessor.app",
@@ -25,10 +28,35 @@
     },
     "win": {
       "target": [
-        "portable"
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
       ],
-      "icon": null
-    }
+      "icon": null,
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": ["zh-CN"],
+      "language": 2052,
+      "shortcutName": "Json处理器"
+    },
+    "portable": {
+      "artifactName": "Json处理器-${version}-portable.exe"
+    },
+    "extraResources": [
+      {
+        "from": "templates",
+        "to": "templates"
+      }
+    ],
+    "asar": true
   },
   "keywords": [
     "json",
